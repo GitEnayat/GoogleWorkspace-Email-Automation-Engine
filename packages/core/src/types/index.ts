@@ -23,6 +23,8 @@ export interface ParsedTemplate {
   name: string;
   subject: string;
   body: string;
+  to?: string;
+  cc?: string;
   tags: string[]; // e.g., ['FirstName', 'Team', 'Date']
   tableRanges?: TableRange[];
 }

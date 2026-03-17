@@ -319,22 +319,94 @@ export class EmailEngine {
   }
 
   /**
-   * Apply date token replacements
+   * Apply date token replacements with robust logic
    */
   private applyDateTokens(text: string): string {
-    return text.replace(/{{DATE:([^}]+)}}/g, (match, dateStr) => {
-      const date = new Date();
-      // Simple date parsing - can be enhanced
-      if (dateStr.toLowerCase().includes("today")) {
-        // Match DD-MMM-YYYY format (e.g., 17-Mar-2026)
-        const day = date.getDate().toString().padStart(2, "0");
-        const month = date.toLocaleString("en-GB", { month: "short" });
-        const year = date.getFullYear();
-        return `${day}-${month}-${year}`;
+    const DATE_REGEX = /{{DATE:([^}]+)}}/g;
+    const MONTH_REGEX = /{{MONTHNAME(?::([^}]+))?}}/g;
+
+    let result = text.replace(DATE_REGEX, (match, token) => {
+      try {
+        const date = this.parseDateToken(token);
+        return this.formatDate(date);
+      } catch (e) {
+        return match;
       }
-      // Add more date logic as needed
-      return match;
     });
+
+    result = result.replace(MONTH_REGEX, (match, offset) => {
+      try {
+        const date = new Date();
+        if (offset) {
+          date.setMonth(date.getMonth() + parseInt(offset, 10));
+        }
+        return date.toLocaleString("en-GB", { month: "long", year: "numeric" });
+      } catch (e) {
+        return match;
+      }
+    });
+
+    return result;
+  }
+
+  private parseDateToken(token: string): Date {
+    const now = new Date();
+    const t = token.toLowerCase().trim();
+
+    if (t === "today") return now;
+    if (t === "yesterday") {
+      now.setDate(now.getDate() - 1);
+      return now;
+    }
+    if (t === "tomorrow") {
+      now.setDate(now.getDate() + 1);
+      return now;
+    }
+    if (t === "monthstart") {
+      now.setDate(1);
+      return now;
+    }
+
+    // Day Arithmetic: Today+7, Today-1
+    const mathMatch = t.match(/today([+-])(\d+)/);
+    if (mathMatch) {
+      const op = mathMatch[1] === "+" ? 1 : -1;
+      const days = parseInt(mathMatch[2], 10);
+      now.setDate(now.getDate() + op * days);
+      return now;
+    }
+
+    // Weekday Logic: Next Monday, Last Friday
+    const days = [
+      "sunday",
+      "monday",
+      "tuesday",
+      "wednesday",
+      "thursday",
+      "friday",
+      "saturday",
+    ];
+    const targetDay = days.findIndex((d) => t.includes(d));
+    if (targetDay !== -1) {
+      const currentDay = now.getDay();
+      let diff = targetDay - currentDay;
+      if (t.includes("next")) diff += 7;
+      if (t.includes("last")) diff -= 7;
+      if (diff === 0 && !t.includes("next") && !t.includes("last")) diff = 0;
+      else if (diff <= 0 && !t.includes("last")) diff += 7;
+
+      now.setDate(now.getDate() + diff);
+      return now;
+    }
+
+    return now;
+  }
+
+  private formatDate(d: Date): string {
+    const day = d.getDate().toString().padStart(2, "0");
+    const month = d.toLocaleString("en-GB", { month: "short" });
+    const year = d.getFullYear();
+    return `${day}-${month}-${year}`;
   }
 
   /**
@@ -364,16 +436,18 @@ export class EmailEngine {
     return result;
   }
 
-  /**
-   * Render tables in the body
-   */
-  private async renderTables(body: string): Promise<string> {
-    // Regex to match [Table] Sheet: ID, range: Range
-    // Captures range until < (start of tag) or end of string, handling spaces
-    const regex = /\[Table\]\s*Sheet:\s*([^,]+),\s*range:\s*([^<]+?)(?=<|$)/g;
-
-    return this.replaceAsync(body, regex, async (match, sheetId, rangeRaw) => {
-      try {
+    /**
+     * Render tables in the body
+     */
+    private async renderTables(body: string): Promise<string> {
+      // Advanced Regex: 
+      // 1. Matches [Table]
+      // 2. Matches optional "Sheet:" followed by URL/ID
+      // 3. Matches optional "range:" followed by TabName!Range
+      // Handles trailing punctuation and HTML tags
+      const regex = /\[Table\]\s*(?:Sheet:\s*)?([^,\s<]+),\s*(?:range:\s*)?([^<]+?)(?=<|$)/gi;
+      
+      return this.replaceAsync(body, regex, async (match, sheetId, rangeRaw) => {      try {
         // Clean range string (remove quotes if any)
         const range = rangeRaw.replace(/['"]/g, "").trim();
         const cleanSheetId = sheetId.trim();
