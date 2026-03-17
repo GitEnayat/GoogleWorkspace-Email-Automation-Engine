@@ -22,6 +22,26 @@ This project has evolved from a Google Apps Script-only solution to a **universa
 
 ---
 
+## 📜 The Story: From Script to Platform
+
+This project began as a humble **Google Apps Script** utility designed to solve a simple problem: *How do we automate consistent, beautifully formatted internal reports without manual copy-pasting?*
+
+### 🐣 Phase 1: The Utility (v1.0)
+Initially, it was a single script bound to a Google Sheet. It worked, but it was trapped inside the "Google Apps Script box." As the complexity of our operations grew, we needed better version control, automated testing, and more robust rendering.
+
+### 🚀 Phase 2: The Migration (v2.0)
+In early 2026, we made a strategic decision to "Professionalize the Script." We performed a complete architectural rewrite, moving the core logic to **Pure TypeScript** and adopting a **Monorepo** structure. 
+
+### 🌍 Phase 3: The Universal Engine (Today)
+What started as a Google-only tool has now evolved into a **Universal Email Orchestration Engine**. 
+- It still runs natively in **Google Apps Script** (via our custom adapter).
+- It now powers **Microsoft 365** enterprise workflows via the Microsoft Graph API.
+- It runs as a professional **Node.js service** on any cloud provider (Google Cloud, AWS, Azure).
+
+This journey represents our commitment to **Portable Engineering**: building tools that aren't tied to a single vendor, but can move wherever the business needs them.
+
+---
+
 ## 🏗️ Architecture
 
 ### Monorepo Structure
