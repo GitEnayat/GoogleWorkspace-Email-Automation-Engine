@@ -18,7 +18,7 @@ class MockTemplateLoader {
   loadTemplate = jest.fn().mockResolvedValue({
     name: 'Test_Template',
     subject: 'Test Subject: {{Name}}',
-    body: 'Hello {{Name}},\n\n{{GREETING}}!\n\nReport date: {{DATE:Today}}',
+    body: 'Hello {{Name}},\n\n{{GREETING}}!\n\nReport date: {{DATE:Today}}\n\nCheck the $LINK:Tracker, TEXT:Project Tracker$',
     tags: ['Name'],
     tableRanges: []
   });
@@ -28,8 +28,8 @@ class MockTemplateLoader {
 class MockDataStore {
   getData = jest.fn().mockResolvedValue([['A', 'B'], [1, 2]]);
   getTabData = jest.fn().mockResolvedValue([
-    { Email: 'user1@example.com', Role: 'Admin', Team: 'Ops' },
-    { Email: 'user2@example.com', Role: 'User', Team: 'Dev' }
+    { Email: 'user1@example.com', Name: 'Admin', Role: 'Admin', Team: 'Ops' },
+    { Email: 'user2@example.com', Name: 'User', Role: 'User', Team: 'Dev' }
   ]);
   appendRow = jest.fn().mockResolvedValue(undefined);
 }
@@ -161,7 +161,10 @@ describe('EmailEngine', () => {
     it('should generate multiple drafts', async () => {
       const results = await engine.generateBatchDrafts(
         ['Template1', 'Template2'],
-        { directorySheetId: 'sheet-123' }
+        { 
+          directorySheetId: 'sheet-123',
+          recipientsTabName: 'Recipients'
+        }
       );
 
       expect(results).toHaveLength(2);
@@ -197,7 +200,8 @@ describe('EmailEngine', () => {
     it('should replace recipient tags', async () => {
       await engine.generateEmailDraft('Test_Template', {
         directorySheetId: 'sheet-123',
-        recipientsTabName: 'Recipients'
+        recipientsTabName: 'Recipients',
+        recipientTagColumns: ['Name', 'Role', 'Team']
       });
 
       // Verify template was processed with recipient data

@@ -25,11 +25,10 @@ export class EmailEngine {
     const startTime = Date.now();
     const logs: any[] = [];
 
-    try {
-      // Merge configs
-      const config = { ...this.defaultConfig, ...userConfig };
-      const mode = config.dryRun ? 'DRY_RUN' : config.testMode ? 'TEST' : 'PROD';
+    const config = { ...this.defaultConfig, ...userConfig };
+    const mode = config.dryRun ? 'DRY_RUN' : config.testMode ? 'TEST' : 'PROD';
 
+    try {
       this.services.logger.info('EmailEngine', `Starting generation for: ${templateName}`, { mode });
 
       // 1. Load template
@@ -41,17 +40,23 @@ export class EmailEngine {
       });
 
       // 2. Resolve recipients
-      const recipients = await this.resolveRecipients(config);
+      let recipients = await this.resolveRecipients(config);
+
+      // 3. Apply test mode or default to current user if no directory is configured
+      if (config.testMode || (!config.directorySheetId && recipients.length === 0)) {
+        recipients = [{ 
+          email: this.services.email.getCurrentUserEmail(), 
+          tags: recipients.length > 0 ? recipients[0].tags : {} 
+        }];
+      }
+
       this.services.logger.info('EmailEngine', 'Recipients resolved', { count: recipients.length });
 
       if (recipients.length === 0) {
         throw new Error('No valid recipients found');
       }
 
-      // 3. Apply test mode if enabled
-      const finalRecipients = config.testMode 
-        ? [{ email: this.services.email.getCurrentUserEmail(), tags: {} }]
-        : recipients;
+      const finalRecipients = recipients;
 
       // 4. Process template for each recipient
       const draftIds: string[] = [];
@@ -60,6 +65,13 @@ export class EmailEngine {
         // Apply dictionary replacement
         const processedTemplate = await this.applyTemplateData(template, recipient, config);
         
+        // In DRY_RUN mode, we skip creating drafts
+        if (config.dryRun) {
+          draftIds.push('dry-run-draft-id');
+          this.services.logger.info('EmailEngine', 'Dry run: skipping draft creation');
+          continue;
+        }
+
         // Check for existing draft
         const existingDraftId = await this.services.email.findDraftBySubject(processedTemplate.subject);
         
@@ -84,7 +96,7 @@ export class EmailEngine {
         draftIds.push(draftId);
 
         // Send if configured
-        if (config.emailAction === 'SEND' && !config.dryRun) {
+        if (config.emailAction === 'SEND') {
           await this.services.email.sendEmail(draftId);
           this.services.logger.info('EmailEngine', 'Email sent', { draftId });
         }
@@ -109,7 +121,7 @@ export class EmailEngine {
       return {
         success: false,
         recipientCount: 0,
-        mode: 'PROD',
+        mode,
         duration,
         error: error.message,
         logs
@@ -223,7 +235,11 @@ export class EmailEngine {
       const date = new Date();
       // Simple date parsing - can be enhanced
       if (dateStr.toLowerCase().includes('today')) {
-        return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+        // Match DD-MMM-YYYY format (e.g., 17-Mar-2026)
+        const day = date.getDate().toString().padStart(2, '0');
+        const month = date.toLocaleString('en-GB', { month: 'short' });
+        const year = date.getFullYear();
+        return `${day}-${month}-${year}`;
       }
       // Add more date logic as needed
       return match;
