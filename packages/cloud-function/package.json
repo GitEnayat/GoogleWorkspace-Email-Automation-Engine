@@ -1,0 +1,21 @@
+{
+  "name": "@universal-email/cloud-function",
+  "version": "1.0.0",
+  "description": "Deployment package for GCP Cloud Functions",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "functions-framework --target=emailEngineHandler",
+    "deploy": "gcloud functions deploy email-engine --runtime nodejs18 --trigger-http --allow-unauthenticated"
+  },
+  "dependencies": {
+    "@universal-email/core": "^2.0.0",
+    "@universal-email/node-google-adapter": "^2.0.0",
+    "@google-cloud/functions-framework": "^3.3.0",
+    "google-auth-library": "^9.6.3"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "@types/node": "^20.11.0"
+  }
+}
