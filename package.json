@@ -10,6 +10,8 @@
     "build": "npm run build -w @universal-email/core && npm run build -w @universal-email/apps-script-adapter && npm run build -w @universal-email/cli",
     "build:core": "npm run build -w @universal-email/core",
     "build:adapter": "npm run build -w @universal-email/apps-script-adapter",
+    "build:ms": "npm run build -w @universal-email/microsoft-adapter",
+    "build:node-google": "npm run build -w @universal-email/node-google-adapter",
     "build:cli": "npm run build -w @universal-email/cli",
     "test": "npm run test -w @universal-email/core",
     "test:coverage": "npm run test:coverage -w @universal-email/core",

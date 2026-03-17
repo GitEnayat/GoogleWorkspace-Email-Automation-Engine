@@ -1,0 +1,28 @@
+{
+  "name": "@universal-email/node-google-adapter",
+  "version": "2.0.0",
+  "description": "Node.js Google Cloud adapter for Universal Email Automation Engine",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@universal-email/core": "^2.0.0",
+    "googleapis": "^134.0.0",
+    "google-auth-library": "^9.6.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.4.0"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}
