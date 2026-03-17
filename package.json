@@ -1,0 +1,49 @@
+{
+  "name": "universal-email-automation",
+  "version": "2.0.0",
+  "description": "A configuration-driven email orchestration engine with multi-platform support",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @universal-email/core && npm run build -w @universal-email/apps-script-adapter && npm run build -w @universal-email/cli",
+    "build:core": "npm run build -w @universal-email/core",
+    "build:adapter": "npm run build -w @universal-email/apps-script-adapter",
+    "build:cli": "npm run build -w @universal-email/cli",
+    "test": "npm run test -w @universal-email/core",
+    "test:coverage": "npm run test:coverage -w @universal-email/core",
+    "lint": "eslint packages/*/src/**/*.ts",
+    "format": "prettier --write \"packages/*/src/**/*.ts\"",
+    "clean": "rm -rf packages/*/dist",
+    "dev:core": "npm run dev -w @universal-email/core",
+    "dev:adapter": "npm run dev -w @universal-email/apps-script-adapter",
+    "dev:cli": "npm run dev -w @universal-email/cli"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "eslint": "^8.57.0",
+    "prettier": "^3.2.5",
+    "typescript": "^5.4.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anomalyco/universal-email-automation"
+  },
+  "keywords": [
+    "email",
+    "automation",
+    "typescript",
+    "nodejs",
+    "google-apps-script",
+    "email-templates",
+    "workflow"
+  ],
+  "author": "Enayatullh",
+  "license": "MIT"
+}
