@@ -12,17 +12,27 @@ export interface EmailProvider {
   /**
    * Create a new email draft
    */
-  createDraft(subject: string, body: string, to: string[], cc?: string[], bcc?: string[]): Promise<string>;
+  createDraft(subject: string, body: string, to: string[], cc?: string[], bcc?: string[], htmlBody?: string): Promise<string>;
   
   /**
    * Update an existing draft
    */
-  updateDraft(draftId: string, subject: string, body: string): Promise<void>;
+  updateDraft(draftId: string, subject: string, body: string, htmlBody?: string): Promise<void>;
   
   /**
    * Find draft by subject
    */
   findDraftBySubject(subject: string): Promise<string | null>;
+
+  /**
+   * Find existing thread by subject (for reply-all)
+   */
+  findThreadBySubject(subject: string): Promise<string | null>;
+
+  /**
+   * Create a reply draft on an existing thread
+   */
+  createReplyDraft(threadId: string, body: string, cc?: string[], bcc?: string[], htmlBody?: string): Promise<string>;
   
   /**
    * Send an email (from draft or directly)
@@ -86,6 +96,16 @@ export interface LinkRepository {
 }
 
 /**
+ * Table renderer - abstracts table generation from data sources
+ */
+export interface TableRenderer {
+  /**
+   * Render a table from a data source range into HTML
+   */
+  renderTable(sheetId: string, range: string): Promise<string>;
+}
+
+/**
  * Logger - abstracts logging operations
  */
 export interface Logger {
@@ -113,6 +133,7 @@ export interface PlatformServices {
   template: TemplateLoader;
   data: DataStore;
   links?: LinkRepository;
+  tables?: TableRenderer; // Optional for now
   logger: Logger;
   cache?: Cache;
 }

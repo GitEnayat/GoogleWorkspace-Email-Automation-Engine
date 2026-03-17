@@ -76,21 +76,52 @@ export class EmailEngine {
         const existingDraftId = await this.services.email.findDraftBySubject(processedTemplate.subject);
         
         let draftId: string;
+        
+        // Generate plain text version for snippet/fallback
+        const plainTextBody = this.htmlToPlainText(processedTemplate.body);
+
         if (existingDraftId) {
+          // Case 1: Update existing draft
           await this.services.email.updateDraft(
             existingDraftId,
             processedTemplate.subject,
-            processedTemplate.body
+            plainTextBody,
+            processedTemplate.body // htmlBody
           );
           draftId = existingDraftId;
           this.services.logger.info('EmailEngine', 'Draft updated', { draftId });
+        
         } else {
-          draftId = await this.services.email.createDraft(
-            processedTemplate.subject,
-            processedTemplate.body,
-            [recipient.email]
-          );
-          this.services.logger.info('EmailEngine', 'Draft created', { draftId });
+          // Case 2: Check for existing thread to reply to (if supported)
+          let threadId: string | null = null;
+          
+          if (this.services.email.findThreadBySubject) {
+             threadId = await this.services.email.findThreadBySubject(processedTemplate.subject);
+          }
+
+          if (threadId && this.services.email.createReplyDraft) {
+            // Reply to existing thread
+            draftId = await this.services.email.createReplyDraft(
+              threadId,
+              plainTextBody, // Plain text body
+              [], // CC
+              [], // BCC
+              processedTemplate.body // htmlBody
+            );
+            this.services.logger.info('EmailEngine', 'Reply draft created', { draftId, threadId });
+          
+          } else {
+            // Case 3: Create new draft
+            draftId = await this.services.email.createDraft(
+              processedTemplate.subject,
+              plainTextBody, // Plain text body
+              [recipient.email],
+              undefined, // cc
+              undefined, // bcc
+              processedTemplate.body // htmlBody
+            );
+            this.services.logger.info('EmailEngine', 'Draft created', { draftId });
+          }
         }
 
         draftIds.push(draftId);
@@ -220,6 +251,11 @@ export class EmailEngine {
       body = this.injectLinks(body, links);
     }
 
+    // Render tables
+    if (this.services.tables) {
+      body = await this.renderTables(body);
+    }
+
     return {
       ...template,
       subject,
@@ -268,5 +304,83 @@ export class EmailEngine {
     }
 
     return result;
+  }
+
+  /**
+   * Render tables in the body
+   */
+  private async renderTables(body: string): Promise<string> {
+    // Regex to match [Table] Sheet: ID, range: Range
+    // Captures range until < (start of tag) or end of string, handling spaces
+    const regex = /\[Table\]\s*Sheet:\s*([^,]+),\s*range:\s*([^<]+?)(?=<|$)/g;
+    
+    return this.replaceAsync(body, regex, async (match, sheetId, rangeRaw) => {
+      try {
+        // Clean range string (remove quotes if any)
+        const range = rangeRaw.replace(/['"]/g, '').trim();
+        const cleanSheetId = sheetId.trim();
+        
+        if (this.services.tables) {
+           return await this.services.tables.renderTable(cleanSheetId, range);
+        }
+        return match;
+      } catch (error: any) {
+        this.services.logger.error('EmailEngine', `Failed to render table: ${error.message}`);
+        return `<p style="color:red">[Table Error: ${error.message}]</p>`;
+      }
+    });
+  }
+
+  /**
+   * Helper to replace string with async callback
+   */
+  private async replaceAsync(str: string, regex: RegExp, asyncFn: (match: string, ...args: any[]) => Promise<string>): Promise<string> {
+    const promises: Promise<string>[] = [];
+    
+    // First pass: collect all promises
+    str.replace(regex, (match, ...args) => {
+      promises.push(asyncFn(match, ...args));
+      return match;
+    });
+    
+    const replacements = await Promise.all(promises);
+    
+    // Reset regex index if global flag is set (crucial for second pass!)
+    if (regex.global) regex.lastIndex = 0;
+    
+    // Second pass: replace with resolved values
+    return str.replace(regex, () => replacements.shift() || '');
+  }
+
+  /**
+   * Convert HTML to plain text for accessibility and snippets
+   */
+  private htmlToPlainText(html: string): string {
+    if (!html) return '';
+
+    return html
+      // Replace <br>, <p> with newlines
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<p[^>]*>/gi, '\n')
+      .replace(/<\/p>/gi, '\n')
+      // Replace <li> with bullet points
+      .replace(/<li>/gi, '• ')
+      .replace(/<\/li>/gi, '\n')
+      // Replace <tr> with newlines for tables
+      .replace(/<\/tr>/gi, '\n')
+      // Replace <td>, <th> with tabs
+      .replace(/<td[^>]*>/gi, '\t')
+      .replace(/<th[^>]*>/gi, '\t')
+      // Remove all remaining HTML tags
+      .replace(/<[^>]+>/g, '')
+      // Decode common HTML entities
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      // Collapse multiple newlines
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
   }
 }

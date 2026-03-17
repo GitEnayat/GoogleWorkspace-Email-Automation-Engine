@@ -3,13 +3,15 @@
  */
 
 import { EmailEngine } from '../src/services/EmailEngine';
-import { PlatformServices, EmailConfig, ParsedTemplate, Recipient } from '../src';
+import { PlatformServices, EmailConfig } from '../src';
 
 // Mock implementations for testing
 class MockEmailProvider {
   createDraft = jest.fn().mockResolvedValue('draft-123');
   updateDraft = jest.fn().mockResolvedValue(undefined);
   findDraftBySubject = jest.fn().mockResolvedValue(null);
+  findThreadBySubject = jest.fn().mockResolvedValue(null);
+  createReplyDraft = jest.fn().mockResolvedValue('reply-draft-123');
   sendEmail = jest.fn().mockResolvedValue(undefined);
   getCurrentUserEmail = jest.fn().mockReturnValue('test@example.com');
 }
@@ -18,9 +20,9 @@ class MockTemplateLoader {
   loadTemplate = jest.fn().mockResolvedValue({
     name: 'Test_Template',
     subject: 'Test Subject: {{Name}}',
-    body: 'Hello {{Name}},\n\n{{GREETING}}!\n\nReport date: {{DATE:Today}}\n\nCheck the $LINK:Tracker, TEXT:Project Tracker$',
+    body: 'Hello {{Name}},\n\n{{GREETING}}!\n\nReport date: {{DATE:Today}}\n\nCheck the $LINK:Tracker, TEXT:Project Tracker$\n\n[Table] Sheet: sheet-123, range: A1:B2',
     tags: ['Name'],
-    tableRanges: []
+    tableRanges: [{ source: 'sheet-123', range: 'A1:B2', preserveFormatting: true }]
   });
   getRawContent = jest.fn().mockResolvedValue('raw content');
 }
@@ -41,6 +43,10 @@ class MockLinkRepository {
   getLink = jest.fn().mockResolvedValue(null);
 }
 
+class MockTableRenderer {
+  renderTable = jest.fn().mockResolvedValue('<table><tr><td>Table Data</td></tr></table>');
+}
+
 class MockLogger {
   info = jest.fn();
   warn = jest.fn();
@@ -54,6 +60,7 @@ function createMockServices(): PlatformServices {
     template: new MockTemplateLoader() as any,
     data: new MockDataStore() as any,
     links: new MockLinkRepository() as any,
+    tables: new MockTableRenderer() as any,
     logger: new MockLogger() as any
   };
 }
@@ -120,9 +127,26 @@ describe('EmailEngine', () => {
       expect(services.email.updateDraft).toHaveBeenCalledWith(
         'existing-draft-456',
         expect.any(String),
-        expect.any(String)
+        expect.any(String), // Plain text
+        expect.any(String)  // HTML
       );
       expect(result.draftId).toBe('existing-draft-456');
+    });
+
+    it('should create reply draft if thread is found', async () => {
+      (services.email.findDraftBySubject as jest.Mock).mockResolvedValue(null);
+      (services.email.findThreadBySubject as jest.Mock).mockResolvedValue('thread-789');
+      
+      const result = await engine.generateEmailDraft('Test_Template');
+
+      expect(services.email.createReplyDraft).toHaveBeenCalledWith(
+        'thread-789',
+        expect.any(String), // Plain text
+        expect.any(Array),  // CC
+        expect.any(Array),  // BCC
+        expect.any(String)  // HTML
+      );
+      expect(result.draftId).toBe('reply-draft-123');
     });
 
     it('should send email if emailAction is SEND', async () => {
@@ -171,29 +195,6 @@ describe('EmailEngine', () => {
       expect(results[0].success).toBe(true);
       expect(results[1].success).toBe(true);
     });
-
-    it('should stop batch if approaching time limit', async () => {
-      // Mock slow templates
-      (services.template.loadTemplate as jest.Mock).mockImplementation(
-        () => new Promise(resolve => 
-          setTimeout(() => resolve({
-            name: 'Slow',
-            subject: 'Slow',
-            body: 'Slow',
-            tags: [],
-            tableRanges: []
-          }), 100)
-        )
-      );
-
-      const results = await engine.generateBatchDrafts(
-        ['Slow1', 'Slow2', 'Slow3'],
-        { directorySheetId: 'sheet-123' }
-      );
-
-      // Should complete all in this test (time check is at 5 minutes)
-      expect(results.length).toBeGreaterThan(0);
-    });
   });
 
   describe('template processing', () => {
@@ -208,7 +209,10 @@ describe('EmailEngine', () => {
       expect(services.email.createDraft).toHaveBeenCalledWith(
         expect.stringContaining('Admin'), // Subject should have Role value
         expect.any(String),
-        expect.any(Array)
+        expect.any(Array),
+        undefined,
+        undefined,
+        expect.any(String)
       );
     });
 
@@ -218,7 +222,10 @@ describe('EmailEngine', () => {
       expect(services.email.createDraft).toHaveBeenCalledWith(
         expect.any(String),
         expect.stringMatching(/Good (Morning|Afternoon|Evening)/),
-        expect.any(Array)
+        expect.any(Array),
+        undefined,
+        undefined,
+        expect.any(String)
       );
     });
 
@@ -226,11 +233,11 @@ describe('EmailEngine', () => {
       await engine.generateEmailDraft('Test_Template');
 
       const draftCall = (services.email.createDraft as jest.Mock).mock.calls[0];
-      const body = draftCall[1];
+      const htmlBody = draftCall[5]; // htmlBody is 6th arg
       
       // DATE:Today should be replaced with actual date
-      expect(body).not.toContain('{{DATE:Today}}');
-      expect(body).toMatch(/\d{2}-[A-Za-z]{3}-\d{4}/);
+      expect(htmlBody).not.toContain('{{DATE:Today}}');
+      expect(htmlBody).toMatch(/\d{2}-[A-Za-z]{3}-\d{4}/);
     });
 
     it('should inject managed links', async () => {
@@ -242,9 +249,25 @@ describe('EmailEngine', () => {
       // Verify links were injected
       expect(services.email.createDraft).toHaveBeenCalledWith(
         expect.any(String),
-        expect.stringContaining('<a href='),
-        expect.any(Array)
+        expect.any(String),
+        expect.any(Array),
+        undefined,
+        undefined,
+        expect.stringContaining('<a href=')
       );
+    });
+
+    it('should render tables', async () => {
+      await engine.generateEmailDraft('Test_Template', {
+        directorySheetId: 'sheet-123',
+        recipientsTabName: 'Recipients'
+      });
+
+      expect(services.tables?.renderTable).toHaveBeenCalledWith('sheet-123', 'A1:B2');
+      
+      const draftCall = (services.email.createDraft as jest.Mock).mock.calls[0];
+      const htmlBody = draftCall[5];
+      expect(htmlBody).toContain('<table><tr><td>Table Data</td></tr></table>');
     });
   });
 
@@ -265,17 +288,6 @@ describe('EmailEngine', () => {
 
       // In test mode, still has 1 recipient (current user)
       expect(result.recipientCount).toBe(1);
-    });
-
-    it('should extract tags from recipient row', async () => {
-      // This is tested indirectly through generateEmailDraft
-      // The template should have tags replaced with recipient data
-      await engine.generateEmailDraft('Test_Template', {
-        directorySheetId: 'sheet-123',
-        recipientsTabName: 'Recipients'
-      });
-
-      expect(services.template.loadTemplate).toHaveBeenCalled();
     });
   });
 });

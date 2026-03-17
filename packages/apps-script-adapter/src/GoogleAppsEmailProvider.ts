@@ -11,7 +11,8 @@ export class GoogleAppsEmailProvider implements EmailProvider {
     body: string,
     to: string[],
     cc?: string[],
-    bcc?: string[]
+    bcc?: string[],
+    htmlBody?: string
   ): Promise<string> {
     const draft = GmailApp.createDraft(
       to.join(','),
@@ -19,31 +20,67 @@ export class GoogleAppsEmailProvider implements EmailProvider {
       body,
       {
         cc: cc?.join(','),
-        bcc: bcc?.join(',')
+        bcc: bcc?.join(','),
+        htmlBody: htmlBody
       }
     );
     return Promise.resolve(draft.getId());
   }
 
-  updateDraft(draftId: string, subject: string, body: string): Promise<void> {
+  updateDraft(draftId: string, subject: string, body: string, htmlBody?: string): Promise<void> {
     const draft = GmailApp.getDraft(draftId);
-    draft.update(draft.getMessage().getTo(), subject, body);
+    draft.update(draft.getMessage().getTo(), subject, body, {
+      htmlBody: htmlBody
+    });
     return Promise.resolve();
   }
 
-  findDraftBySubject(subject: string): Promise<string | null> {
-    const threads = GmailApp.search(`in:drafts subject:"${subject}"`);
-    if (threads.length > 0) {
-      const messages = threads[0].getMessages();
-      if (messages.length > 0) {
-        const draft = GmailApp.getDraft(messages[0].getId());
-        return Promise.resolve(draft.getId());
+  async findDraftBySubject(subject: string): Promise<string | null> {
+    const drafts = GmailApp.getDrafts();
+    for (const draft of drafts) {
+      const message = draft.getMessage();
+      const draftSubject = message.getSubject();
+      if (draftSubject && draftSubject.includes(subject)) {
+        return draft.getId();
       }
     }
-    return Promise.resolve(null);
+    return null;
   }
 
-  sendEmail(
+  async findThreadBySubject(subject: string): Promise<string | null> {
+    const threads = GmailApp.search(`subject:"${subject}"`, 0, 5);
+    for (const thread of threads) {
+      const originalSubject = thread.getFirstMessageSubject();
+      // Skip OOO and auto-replies
+      if (!originalSubject.match(/^(Automatic reply|OOO|Out of Office|Absence Notice):/i)) {
+        return thread.getId();
+      }
+    }
+    return null;
+  }
+
+  async createReplyDraft(
+    threadId: string,
+    body: string,
+    cc?: string[],
+    bcc?: string[],
+    htmlBody?: string
+  ): Promise<string> {
+    const thread = GmailApp.getThreadById(threadId);
+    if (!thread) {
+      throw new Error(`Thread with ID ${threadId} not found`);
+    }
+
+    const draft = thread.createDraftReplyAll(body, {
+      htmlBody: htmlBody,
+      cc: cc?.join(','),
+      bcc: bcc?.join(',')
+    });
+    
+    return draft.getId();
+  }
+
+  async sendEmail(
     draftId?: string,
     to?: string[],
     subject?: string,

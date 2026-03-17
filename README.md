@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.4-blue)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D18-green)](https://nodejs.org/)
-[![Status: In Development](https://img.shields.io/badge/Status-In%20Development-orange)](https://github.com/anomalyco/universal-email-automation)
+[![Status: Stable](https://img.shields.io/badge/Status-Stable-green)](https://github.com/anomalyco/universal-email-automation)
 
 ---
 
