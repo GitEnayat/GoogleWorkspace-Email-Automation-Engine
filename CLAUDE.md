@@ -29,13 +29,20 @@ packages/
 │       ├── providers/         # PlatformServices interface (contract)
 │       └── services/          # EmailEngine orchestration class
 │
-├── apps-script-adapter/       # Google Workspace implementations
+├── apps-script-adapter/       # Google Workspace implementations (Apps Script runtime)
 │   └── src/
 │       ├── GoogleAppsEmailProvider.ts     # GmailApp wrapper
 │       ├── GoogleDocsTemplateLoader.ts    # DocumentApp wrapper
 │       ├── GoogleSheetsDataStore.ts       # SpreadsheetApp wrapper
 │       ├── GoogleAppsLinkRepository.ts    # Centralized link store
 │       ├── GoogleAppsLogger.ts            # Logger.log wrapper
+│       └── index.ts
+│
+├── node-google-adapter/       # Google Workspace implementations (Node.js runtime)
+│   └── src/
+│       ├── providers/
+│       │   └── NodeGoogleEmailProvider.ts  # Gmail API wrapper
+│       ├── template/
 │       └── index.ts
 │
 └── cli/                       # Terminal interface
@@ -66,20 +73,17 @@ packages/
 
 - Monorepo scaffolding and all source files exist.
 - `npm install` works at root.
-- **Build has not been run yet** (`packages/*/dist/` do not exist).
-- **No tests written** — Jest is configured but test files are empty/missing.
-- There is a known type issue in `packages/core/src/services/EmailEngine.ts` (the file shows as modified in git but the fix hasn't been committed).
-- The Apps Script bundle (`dist/EmailEngine.gs`) has not been generated.
+- Build has been run - `packages/*/dist/` directories exist.
+- Tests are being implemented in `packages/core/test/`.
+- The Apps Script bundle (`dist/EmailEngine.gs`) compiles successfully.
 
 ---
 
 ## Roadmap Priorities
 
-1. Fix the type bug in `EmailEngine.ts` and commit it.
-2. Run `npm run build` and verify the Apps Script bundle compiles.
-3. Write unit tests for core: template parsing, dictionary replacement, date tokens, recipient resolution.
-4. Add Microsoft 365 / Graph API adapter (`packages/m365-adapter`).
-5. Build a Google Sheets sidebar UI for no-code trigger configuration.
+1. Run `npm run build` and verify the Apps Script bundle compiles.
+2. Add Microsoft 365 / Graph API adapter (`packages/m365-adapter`).
+3. Build a Google Sheets sidebar UI for no-code trigger configuration.
 
 ---
 
@@ -115,13 +119,13 @@ npm run format
 
 ## Directory Reference
 
-| Path | Purpose |
-|------|---------|
-| `packages/core` | Platform-agnostic engine (pure TypeScript) |
-| `packages/apps-script-adapter` | Google Workspace implementation |
-| `packages/cli` | Terminal CLI |
-| `legacy/` | v1 Apps Script source (reference only, not active) |
-| `docs/` | Additional documentation |
-| `ARCHITECTURE.md` | Architecture diagrams and data-flow docs |
-| `MIGRATION.md` | v1 → v2 migration guide |
-| `ROADMAP.md` | Planned features |
+| Path                           | Purpose                                            |
+| ------------------------------ | -------------------------------------------------- |
+| `packages/core`                | Platform-agnostic engine (pure TypeScript)         |
+| `packages/apps-script-adapter` | Google Workspace implementation                    |
+| `packages/cli`                 | Terminal CLI                                       |
+| `legacy/`                      | v1 Apps Script source (reference only, not active) |
+| `docs/`                        | Additional documentation                           |
+| `ARCHITECTURE.md`              | Architecture diagrams and data-flow docs           |
+| `MIGRATION.md`                 | v1 → v2 migration guide                            |
+| `ROADMAP.md`                   | Planned features                                   |

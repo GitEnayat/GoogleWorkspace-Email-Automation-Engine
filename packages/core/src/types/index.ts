@@ -42,26 +42,29 @@ export interface TableRange {
 export interface EmailConfig {
   // Template source
   templateDocumentId?: string;
-  
+
   // Data source
   directorySheetId?: string;
   recipientsTabName?: string;
-  
+
   // Recipient resolution
   recipientEmailColumn?: string;
   recipientTagColumns?: string[];
-  
+
   // Branding
   logoUrl?: string;
   signatureTemplateId?: string;
-  
+
   // Execution mode
   dryRun?: boolean;
   testMode?: boolean;
-  
+
   // Action: create draft or send
-  emailAction?: 'DRAFT' | 'SEND';
-  
+  emailAction?: "DRAFT" | "SEND";
+
+  // Batch rate limiting
+  batchDelayMs?: number;
+
   // Runtime overrides
   [key: string]: any;
 }
@@ -102,7 +105,7 @@ export interface ExecutionResult {
   draftId?: string;
   draftIds?: string[];
   recipientCount: number;
-  mode: 'PROD' | 'TEST' | 'DRY_RUN';
+  mode: "PROD" | "TEST" | "DRY_RUN";
   duration: number;
   error?: string;
   logs: LogEntry[];
@@ -113,7 +116,7 @@ export interface ExecutionResult {
  */
 export interface LogEntry {
   timestamp: Date;
-  level: 'INFO' | 'WARN' | 'ERROR';
+  level: "INFO" | "WARN" | "ERROR";
   component: string;
   message: string;
   context?: Record<string, any>;
