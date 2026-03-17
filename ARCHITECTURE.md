@@ -1,142 +1,479 @@
-# Architecture Overview
+# Architecture Deep Dive
 
-## System Context
+## System Overview
 
-The **Google Workspace Email Orchestrator** is a script-based automation tool that runs within the Google Apps Script environment. It bridges the gap between unstructured content (Docs) and structured data (Sheets) to produce formatted emails (Gmail).
-
-## Module Structure
-
-The codebase is split into small modules, each responsible for one part of the workflow:
-
-```mermaid
-classDiagram
-    class MailOrchestrator {
-        +generateEmailDraft()
-        +generateBatchDrafts()
-    }
-    class AppConfig {
-        +templateDocumentId
-        +directorySheetId
-    }
-    class TemplateService {
-        +fetchTemplate()
-        +applyDictionary_()
-    }
-    class LinkRepository {
-        +loadLinkRepository()
-        +injectManagedLinks()
-    }
-    class RecipientService {
-        +resolveRecipients()
-        +generateUserSignature()
-    }
-    class SheetTableRenderer {
-        +processTables()
-    }
-
-    MailOrchestrator --> AppConfig : Init
-    MailOrchestrator --> TemplateService : Parse Doc
-    MailOrchestrator --> LinkRepository : Inject Links
-    MailOrchestrator --> RecipientService : Get Emails
-    TemplateService --> SheetTableRenderer : Render Tables
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    Universal Email Automation Engine v2.0               │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                ┌───────────────────┼───────────────────┐
+                │                   │                   │
+        ┌───────▼────────┐  ┌──────▼───────┐  ┌───────▼────────┐
+        │   @universal   │  │  @universal  │  │   @universal   │
+        │   -email/core  │  │  -email/     │  │   -email/cli   │
+        │                │  │  apps-script │  │                │
+        │  Pure TypeScript│  │  -adapter    │  │  Commander.js  │
+        │  Platform-agnostic│ │  Google APIs │  │  Terminal UI   │
+        └───────┬────────┘  └──────┬───────┘  └───────┬────────┘
+                │                   │                   │
+                └───────────────────┼───────────────────┘
+                                    │
+                        ┌───────────▼────────────┐
+                        │   Your Application     │
+                        │                        │
+                        │  - Node.js app         │
+                        │  - Google Apps Script  │
+                        │  - CLI commands        │
+                        └────────────────────────┘
 ```
 
-## Data Flow Pipeline
+---
 
-The system follows a linear pipeline pattern for each execution:
+## Package Dependencies
 
-```mermaid
-sequenceDiagram
-    participant User
-    participant Orchestrator as MailOrchestrator
-    participant Config as AppConfig
-    participant Template as TemplateService
-    participant CMS as LinkRepository
-    participant Recipients as RecipientService
-    participant Gmail as GmailApp
+```
+@universal-email/cli
+    │
+    ├─→ @universal-email/core
+    │
+    └─→ @universal-email/apps-script-adapter
+            │
+            └─→ @universal-email/core
 
-    User->>Orchestrator: generateEmailDraft("Morning_Report")
-    Orchestrator->>Config: Load Defaults + Overrides
-    
-    Orchestrator->>Template: fetchTemplate("Morning_Report")
-    Template-->>Orchestrator: {subject, body, to_tags}
-    
-    Orchestrator->>CMS: loadLinkRepository()
-    Orchestrator->>CMS: injectManagedLinks(body)
-    
-    Orchestrator->>Recipients: resolveRecipients(to_tags)
-    Recipients-->>Orchestrator: ["user1@example.com", "user2@example.com"]
-    
-    Orchestrator->>Recipients: generateUserSignature()
-    
-    Orchestrator->>Gmail: search(subject)
-    alt Draft Exists
-        Orchestrator->>Gmail: update(draft)
-    else New Draft
-        Orchestrator->>Gmail: createDraft()
-    end
-    
-    opt Action == SEND
-        Orchestrator->>Gmail: send(draft)
-    end
+@universal-email/core
+    ├─→ handlebars (template engine)
+    └─→ node-fetch (HTTP requests)
+
+@universal-email/apps-script-adapter
+    ├─→ @universal-email/core
+    └─→ @types/google-apps-script (dev)
 ```
 
-## Component Breakdown
+---
 
-### 1. AppConfig (Configuration)
-A central configuration layer that stores environment IDs (Docs, Sheets) and supports runtime overrides for testing and development. (Doc IDs, Sheet IDs). It supports runtime overrides, allowing the script to switch between "Test" and "Production" resources dynamically.
+## Data Flow: Single Email Generation
 
-### 2. MailOrchestrator (Core Logic)
-- The main controller. It coordinates the data flow and handles "fail-fast" logic.
--   **LockService**: Designed to support locking via LockService to prevent concurrent executions when triggered automatically.
--   **Draft Recycling**: Searches for existing drafts matches by subject to avoid clutter.
--   **Send vs Draft**: Configurable final action (`emailAction`) to either leave as draft or send immediately.
+```
+┌──────────────┐
+│   User/CLI   │
+│  Invocation  │
+└──────┬───────┘
+       │ generateEmailDraft('Morning_Status', config)
+       ▼
+┌──────────────────────────────────────────────────────────────┐
+│                    EmailEngine (Core)                        │
+│                                                              │
+│  1. Merge configs (defaults + user overrides)               │
+│  2. Determine mode (PROD / TEST / DRY_RUN)                  │
+└──────┬───────────────────────────────────────────────────────┘
+       │
+       ├──────────────┬────────────────┬─────────────────┐
+       │              │                │                 │
+       ▼              ▼                ▼                 ▼
+┌────────────┐ ┌───────────┐ ┌──────────────┐ ┌─────────────┐
+│ Template   │ │  Data     │ │  Recipient   │ │   Link      │
+│ Loader     │ │  Store    │ │  Resolver    │ │ Repository  │
+│            │ │           │ │              │ │             │
+│ Google Docs│ │ Google    │ │ Directory    │ │ Centralized │
+│ or other   │ │ Sheets    │ │ Sheet        │ │ URLs        │
+└─────┬──────┘ └─────┬─────┘ └──────┬───────┘ └──────┬──────┘
+      │              │               │                │
+      └──────────────┴───────────────┴────────────────┘
+                            │
+                            ▼
+                  ┌─────────────────────┐
+                  │  Template Processing │
+                  │                      │
+                  │  - Dictionary replace│
+                  │  - Date tokens       │
+                  │  - Greeting          │
+                  │  - Link injection    │
+                  │  - Table rendering   │
+                  └──────────┬──────────┘
+                             │
+                             ▼
+                  ┌─────────────────────┐
+                  │   Email Provider    │
+                  │                     │
+                  │  - Find existing    │
+                  │  - Create/Update    │
+                  │  - Send (optional)  │
+                  └──────────┬──────────┘
+                             │
+                             ▼
+                  ┌─────────────────────┐
+                  │   ExecutionResult   │
+                  │                     │
+                  │  - success: boolean │
+                  │  - draftId: string  │
+                  │  - duration: number │
+                  │  - logs: array      │
+                  └─────────────────────┘
+```
 
-### 3. TemplateService (Parsing)
-Extracts content from Google Docs.
--   **Dictionary Engine**: Replaces `{{KEY}}` tags with dynamic values.
--   **HTML Conversion**: Converts Google Doc content into HTML suitable for Gmail drafts..
- 
-### 4. SheetTableRenderer (Visualization)
-A dedicated renderer that converts Google Sheet ranges into HTML tables.
--   **Formatting**: Attempts to preserve key formatting such as background colors, fonts, and borders.
--   **Merges**: accurately handles `rowspan` and `colspan`.
+---
 
-## Reliability Patterns
+## Provider Pattern Detail
 
-### Concurrency Safety
-- The design anticipates concurrent trigger execution and is intended to use LockService to avoid duplicate runs.
+```typescript
+┌─────────────────────────────────────────────────────────────┐
+│  Core Defines Interfaces (platform-agnostic)                │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  interface EmailProvider {                                  │
+│    createDraft(subject, body, to): Promise<string>;         │
+│    updateDraft(draftId, subject, body): Promise<void>;      │
+│    sendEmail(draftId?): Promise<void>;                      │
+│  }                                                          │
+│                                                             │
+│  interface TemplateLoader {                                 │
+│    loadTemplate(name, sourceId): Promise<ParsedTemplate>;   │
+│  }                                                          │
+│                                                             │
+│  interface DataStore {                                      │
+│    getTabData(sheetId, tabName): Promise<Record[]>;         │
+│  }                                                          │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            │ implements
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Apps Script Adapter Implements (Google-specific)           │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  class GoogleAppsEmailProvider implements EmailProvider {   │
+│    createDraft(subject, body, to) {                         │
+│      return GmailApp.createDraft(...).getId();              │
+│    }                                                        │
+│    /* ... */                                                │
+│  }                                                          │
+│                                                             │
+│  class GoogleDocsTemplateLoader implements TemplateLoader { │
+│    loadTemplate(name, sourceId) {                           │
+│      const doc = DocumentApp.openById(sourceId);             │
+│      /* ... */                                              │
+│    }                                                        │
+│  }                                                          │
+│                                                             │
+│  class GoogleSheetsDataStore implements DataStore {         │
+│    getTabData(sheetId, tabName) {                           │
+│      const sheet = SpreadsheetApp.openById(sheetId);        │
+│      /* ... */                                              │
+│    }                                                        │
+│  }                                                          │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            │ Future adapters
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Future: Other Platforms                                    │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  class SendGridProvider implements EmailProvider { ... }    │
+│  class SESProvider implements EmailProvider { ... }         │
+│  class GraphProvider implements EmailProvider { ... }       │
+│                                                             │
+│  class FileSystemTemplateLoader implements TemplateLoader { │
+│    loadTemplate(name, path) {                               │
+│      return fs.readFile(`${path}/${name}.hbs`);             │
+│    }                                                        │
+│  }                                                          │
+│                                                             │
+│  class PostgresDataStore implements DataStore {             │
+│    getTabData(table, filters) {                             │
+│      return db.query(`SELECT * FROM ${table}`);             │
+│    }                                                        │
+│  }                                                          │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
 
-### Quota Management
--   **Batch Handling**: The `generateBatchDrafts` function includes a timer to stop execution before the 6-minute Apps Script limit is reached.
--   **CacheService**: Used to reduce repeated Drive calls when generating signatures or loading shared assets.
+---
 
-## Deployment Model
+## Build Pipeline (Apps Script Adapter)
 
-This project is architected to be deployed as a **Google Apps Script Library**.
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Source Files (TypeScript)                                  │
+├─────────────────────────────────────────────────────────────┤
+│  packages/core/src/                                         │
+│    ├── types/index.ts                                       │
+│    ├── providers/index.ts                                   │
+│    └── services/EmailEngine.ts                              │
+│                                                             │
+│  packages/apps-script-adapter/src/                          │
+│    ├── index.ts                                             │
+│    ├── GoogleAppsEmailProvider.ts                           │
+│    ├── GoogleDocsTemplateLoader.ts                          │
+│    ├── GoogleSheetsDataStore.ts                             │
+│    ├── GoogleAppsLinkRepository.ts                          │
+│    └── GoogleAppsLogger.ts                                  │
+└─────────────────────────────────────────────────────────────┘
+       │
+       │ npm run build
+       │ (TypeScript compiler)
+       ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Compiled JavaScript (dist/)                                │
+├─────────────────────────────────────────────────────────────┤
+│  packages/core/dist/                                        │
+│    ├── types/index.js                                       │
+│    ├── providers/index.js                                   │
+│    └── services/EmailEngine.js                              │
+│                                                             │
+│  packages/apps-script-adapter/dist/                         │
+│    ├── index.js                                             │
+│    └── *.js                                                 │
+└─────────────────────────────────────────────────────────────┘
+       │
+       │ npm run build:bundle
+       │ (esbuild bundler)
+       ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Bundled Output (EmailEngine.gs)                            │
+├─────────────────────────────────────────────────────────────┤
+│  /** @OnlyCurrentDoc */                                     │
+│  var EmailEngine = (function() {                            │
+│    // All core code here                                    │
+│    // All adapter code here                                 │
+│    return {                                                 │
+│      generateEmailDraft: function(template, config) {...},  │
+│      generateBatchDrafts: function(templates, config) {...} │
+│    };                                                       │
+│  })();                                                      │
+└─────────────────────────────────────────────────────────────┘
+       │
+       │ Copy to Apps Script project
+       ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Google Apps Script Runtime                                 │
+├─────────────────────────────────────────────────────────────┤
+│  function sendMorningReport() {                             │
+│    EmailEngine.generateEmailDraft('Morning_Status', {       │
+│      templateDocumentId: '...',                             │
+│      emailAction: 'DRAFT'                                   │
+│    });                                                      │
+│  }                                                          │
+└─────────────────────────────────────────────────────────────┘
+```
 
--   **Library Mode**: The script is deployed once and typically has a fixed `HEAD` version or numbered versions.
--   **Consumption**: Other scripts (e.g., container-bound scripts in specific Spreadsheets) add this project as a library.
--   **Config Separation**: Configuration (`AppConfig`) is passed from the *consumer* script to the *library*, ensuring the core logic remains stateless and reusable across different departments or teams.
+---
 
-## Platform Constraints
+## Mode Comparison
 
-This system is built within the boundaries of the Google Apps Script runtime:
+```
+┌──────────────────────────────────────────────────────────────┐
+│  PROD Mode (Default)                                         │
+├──────────────────────────────────────────────────────────────┤
+│  • Reads real recipients from Directory Sheet               │
+│  • Creates drafts in real Gmail                             │
+│  • Sends if emailAction: 'SEND'                             │
+│  • Logs to System_Logs sheet                                │
+│                                                              │
+│  Use for: Production deployments                            │
+└──────────────────────────────────────────────────────────────┘
 
-1.  **Execution Time**: Scripts have a hard limit (usually 6 minutes per execution). The Batch Orchestrator mitigates this, but large batches (>50 drafts) may need to be split.
-2.  **Email Quotas**: Google Workspace accounts have daily sending limits (e.g., 2,000 emails/day for Enterprise). This tool is for *internal* operations, not mass marketing.
-3.  **HTML Support**: Gmail's rendering engine has specific quirks. This tool focuses on "table-safe" HTML to ensure consistent rendering across devices.
+┌──────────────────────────────────────────────────────────────┐
+│  TEST Mode (testMode: true)                                  │
+├──────────────────────────────────────────────────────────────┤
+│  • Ignores real recipients                                  │
+│  • Sends only to current user (you)                         │
+│  • Safe to test with real data                              │
+│  • Logs to System_Logs sheet                                │
+│                                                              │
+│  Use for: Testing before deployment                         │
+└──────────────────────────────────────────────────────────────┘
 
-## Security & Privacy
+┌──────────────────────────────────────────────────────────────┐
+│  DRY_RUN Mode (dryRun: true)                                 │
+├──────────────────────────────────────────────────────────────┤
+│  • Processes everything                                     │
+│  • Does NOT create drafts                                   │
+│  • Does NOT send emails                                     │
+│  • Logs everything to console                               │
+│                                                              │
+│  Use for: Debugging, validation                             │
+└──────────────────────────────────────────────────────────────┘
+```
 
--The script runs entirely within the user’s Google Workspace environment.
-No external servers or third-party APIs are used.
-Access is controlled through standard Google OAuth scopes granted during installation.
+---
 
-## Trade-offs
+## Execution Flow with Error Handling
 
-This project prioritizes simplicity and adoption inside Google Workspace over full email-platform flexibility.
+```
+┌─────────────┐
+│   Start     │
+└──────┬──────┘
+       │
+       ▼
+┌─────────────────┐
+│ Load Config     │
+└──────┬──────────┘
+       │
+       ▼
+┌─────────────────┐     Error
+│ Validate Config │──────────────┐
+└──────┬──────────┘              │
+       │ OK                      ▼
+       │                  ┌──────────────┐
+       ▼                  │ Log Error    │
+┌─────────────────┐       │ Return fail  │
+│ Load Template   │◄──────┤              │
+└──────┬──────────┘       └──────────────┘
+       │
+       ▼
+┌─────────────────┐     Error
+│ Parse Template  │──────────────┐
+└──────┬──────────┘              │
+       │ OK                      ▼
+       │                  ┌──────────────┐
+       ▼                  │ Log Error    │
+┌─────────────────┐       │ Return fail  │
+│ Resolve Recip.  │◄──────┤              │
+└──────┬──────────┘       └──────────────┘
+       │
+       ▼
+┌─────────────────┐     Error
+│ Validate Recip. │──────────────┐
+└──────┬──────────┘              │
+       │ OK                      ▼
+       │                  ┌──────────────┐
+       ▼                  │ Log Error    │
+┌─────────────────┐       │ Return fail  │
+│ Process Template│◄──────┤              │
+└──────┬──────────┘       └──────────────┘
+       │
+       ▼
+┌─────────────────┐     Error
+│ Create Draft    │──────────────┐
+└──────┬──────────┘              │
+       │ OK                      ▼
+       │                  ┌──────────────┐
+       ▼                  │ Log Error    │
+┌─────────────────┐       │ Return fail  │
+│ Send? (optional)│◄──────┤              │
+└──────┬──────────┘       └──────────────┘
+       │
+       ▼
+┌─────────────────┐
+│ Log Execution   │
+│ (System_Logs)   │
+└──────┬──────────┘
+       │
+       ▼
+┌─────────────────┐
+│ Return Result   │
+│ {success,       │
+│  draftId,       │
+│  duration}      │
+└─────────────────┘
+```
 
-Key trade-offs:
-- Built on Apps Script → constrained by execution time and quotas
-- Uses Google Docs as templates → easier for non-developers, but less precise than hand-written HTML
+---
+
+## Security Model
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Data Never Leaves Google's Ecosystem                       │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  Google Docs ──┐                                            │
+│                │                                            │
+│  Google Sheets─┼──► Engine ──► Gmail Drafts                │
+│                │                                            │
+│  Google Drive ─┘                                            │
+│                                                             │
+│  No external APIs called                                    │
+│  No data sent to third parties                              │
+│  All processing happens in Google's servers                 │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│  OAuth Scopes Required                                      │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  https://www.googleapis.com/auth/gmail.compose             │
+│    → Create and manage drafts                              │
+│                                                             │
+│  https://www.googleapis.com/auth/documents                 │
+│    → Read template documents                               │
+│                                                             │
+│  https://www.googleapis.com/auth/spreadsheets              │
+│    → Read data and configuration                           │
+│                                                             │
+│  https://www.googleapis.com/auth/drive.readonly            │
+│    → Access logos and signatures                           │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Testing Strategy
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Unit Tests (Jest) - Core Package                           │
+├─────────────────────────────────────────────────────────────┤
+│  ✓ Template parsing                                         │
+│  ✓ Dictionary replacement                                   │
+│  ✓ Date token processing                                    │
+│  ✓ Link injection                                           │
+│  ✓ Recipient resolution                                     │
+│  ✓ Error handling                                           │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│  Integration Tests - Apps Script Adapter                    │
+├─────────────────────────────────────────────────────────────┤
+│  ✓ Google Docs template loading (manual)                    │
+│  ✓ Google Sheets data retrieval (manual)                    │
+│  ✓ Gmail draft creation (manual)                            │
+│  ✓ End-to-end workflow (manual)                             │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│  CLI Tests                                                  │
+├─────────────────────────────────────────────────────────────┤
+│  ✓ Command parsing                                          │
+│  ✓ Flag handling                                            │
+│  ✓ Output formatting                                        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Performance Considerations
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  Apps Script Limits                                          │
+├──────────────────────────────────────────────────────────────┤
+│  • Execution timeout: 6 minutes per run                     │
+│  • Email quota: 2,000/day (Workspace)                       │
+│  • Cache size: 100KB                                        │
+│  • URL Fetch quota: 20,000/day                              │
+│                                                              │
+│  Mitigation:                                                 │
+│  • generateBatchDrafts() has built-in time checks           │
+│  • CacheService for repeated operations                     │
+│  • Draft recycling prevents duplicates                      │
+└──────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────┐
+│  Node.js Performance                                         │
+├──────────────────────────────────────────────────────────────┤
+│  • No execution timeout (your server)                       │
+│  • Rate limiting by email provider                          │
+│  • Memory: depends on your environment                      │
+│                                                              │
+│  Optimization:                                               │
+│  • Batch processing                                         │
+│  • Connection pooling                                       │
+│  • Caching layer (Redis, etc.)                              │
+└──────────────────────────────────────────────────────────────┘
+```
