@@ -2,6 +2,7 @@ import {
   TemplateLoader,
   ParsedTemplate,
   TableRange,
+  createTableTagRegex,
 } from "@universal-email/core";
 import { Client } from "@microsoft/microsoft-graph-client";
 import { WordToHtmlConverter } from "../utils/WordToHtmlConverter";
@@ -123,7 +124,7 @@ export class NodeMicrosoftOneDriveTemplateLoader implements TemplateLoader {
   }
 
   private extractTableRanges(content: string): TableRange[] {
-    const tableRegex = /\[Table\]\s*Sheet:\s*([^,]+),\s*range:\s*([^<]+)/g;
+    const tableRegex = createTableTagRegex();
     const ranges: TableRange[] = [];
     let match;
 

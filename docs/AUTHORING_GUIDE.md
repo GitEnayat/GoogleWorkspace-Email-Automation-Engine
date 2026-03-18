@@ -69,8 +69,39 @@ Create a tab (e.g., `Recipients`) with these columns:
 
 ---
 
+## 6. Engine Settings (Regional Preferences)
+
+You can customize how dates, times, and the week are handled by creating an **`Engine_Settings`** tab in your spreadsheet. This is optional — sensible defaults are used if the tab doesn't exist.
+
+**How to set up the Settings tab:**
+Create a tab named `Engine_Settings` with two columns:
+
+| Setting | Value |
+| :--- | :--- |
+| `timezone` | `Asia/Kuala_Lumpur` |
+| `dateFormat` | `dd-MMM-yyyy` |
+| `locale` | `en-GB` |
+| `weekStartDay` | `0` |
+| `timeFormat` | `24h` |
+
+**Setting Reference:**
+
+| Setting | What it controls | Allowed values | Default |
+| :--- | :--- | :--- | :--- |
+| `timezone` | Greeting, time tokens, month names | Any IANA timezone (e.g., `America/New_York`, `Europe/London`) | Your system timezone |
+| `dateFormat` | Output of `{{DATE:...}}` tokens | `dd-MMM-yyyy`, `MM/dd/yyyy`, `yyyy-MM-dd`, etc. | `dd-MMM-yyyy` |
+| `locale` | Language for month/day names | `en-GB`, `en-US`, `ms-MY`, `fr-FR`, etc. | `en-GB` |
+| `weekStartDay` | What day `{{DATE:WeekStart}}` returns | `0` = Sunday, `1` = Monday, … `6` = Saturday | `0` (Sunday) |
+| `timeFormat` | Output of `{{TIME}}` tokens | `12h` or `24h` | `24h` |
+
+*   **Pro Tip**: Use the same spreadsheet as your Recipients and Link_Registry — just add a new tab.
+*   **Override**: Developers can still override any setting programmatically. The priority is: **code config > Settings tab > defaults**.
+
+---
+
 ## 🚀 Summary Checklist for Users
 1.  **Write Template**: Create a Google Doc with `{{Tags}}`.
 2.  **Add Recipients**: List your users in a Google Sheet.
 3.  **Configure Links**: (Optional) Add your links to the `Link_Registry`.
-4.  **Trigger**: Run the `EmailEngine.run()` script from your Sheet.
+4.  **Configure Settings**: (Optional) Add regional preferences to `Engine_Settings`.
+5.  **Trigger**: Run the `EmailEngine.run()` script from your Sheet.

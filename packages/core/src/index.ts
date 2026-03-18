@@ -12,3 +12,4 @@ export * from './providers';
 
 // Services
 export { EmailEngine } from './services/EmailEngine';
+export { TemplateValidator } from './services/TemplateValidator';

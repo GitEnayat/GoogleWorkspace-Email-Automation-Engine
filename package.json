@@ -41,9 +41,13 @@
     "typescript",
     "nodejs",
     "google-apps-script",
+    "microsoft-365",
+    "outlook",
     "email-templates",
     "workflow",
-    "google-workspace"
+    "google-workspace",
+    "microsoft-graph",
+    "mail-merge"
   ],
   "author": "Enayatullah",
   "license": "MIT"

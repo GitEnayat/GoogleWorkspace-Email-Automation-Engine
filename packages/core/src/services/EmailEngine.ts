@@ -6,10 +6,14 @@
 import {
   EmailConfig,
   ExecutionResult,
+  LocaleConfig,
   ParsedTemplate,
   Recipient,
+  ValidationResult,
+  createTableTagRegex,
 } from "../types";
 import { PlatformServices } from "../providers";
+import { TemplateValidator } from "./TemplateValidator";
 
 export class EmailEngine {
   private services: PlatformServices;
@@ -80,7 +84,11 @@ export class EmailEngine {
 
       const finalRecipients = recipients;
 
-      // 4. Process template for each recipient
+      // 4. Load locale settings once (from Settings tab + programmatic overrides)
+      const tabSettings = await this.loadSettingsFromStore(config);
+      const locale = this.resolveLocale(config, tabSettings);
+
+      // 5. Process template for each recipient
       const draftIds: string[] = [];
 
       for (const recipient of finalRecipients) {
@@ -89,6 +97,7 @@ export class EmailEngine {
           template,
           recipient,
           config,
+          locale,
         );
 
         // In DRY_RUN mode, we skip creating drafts
@@ -272,15 +281,94 @@ export class EmailEngine {
   }
 
   /**
+   * Load locale settings from a Settings tab in the spreadsheet/workbook.
+   * Returns a partial LocaleConfig — only keys present in the tab are set.
+   *
+   * Expected tab layout (two columns):
+   *   | Setting      | Value            |
+   *   |--------------|------------------|
+   *   | timezone     | America/New_York |
+   *   | dateFormat   | MM/dd/yyyy       |
+   *   | locale       | en-US            |
+   *   | weekStartDay | 1                |
+   *   | timeFormat   | 12h              |
+   */
+  private async loadSettingsFromStore(
+    config: Partial<EmailConfig>,
+  ): Promise<Partial<LocaleConfig>> {
+    const sheetId = config.settingsSheetId ?? config.directorySheetId;
+    const tabName = config.settingsTabName ?? "Engine_Settings";
+
+    if (!sheetId) return {};
+
+    try {
+      const rows = await this.services.data.getTabData(sheetId, tabName);
+      const settings: Partial<LocaleConfig> = {};
+
+      for (const row of rows) {
+        const key = (row["Setting"] ?? row["setting"] ?? "").toString().trim();
+        const value = (row["Value"] ?? row["value"] ?? "").toString().trim();
+        if (!key || !value) continue;
+
+        switch (key) {
+          case "timezone":
+            settings.timezone = value;
+            break;
+          case "dateFormat":
+            settings.dateFormat = value;
+            break;
+          case "locale":
+            settings.locale = value;
+            break;
+          case "weekStartDay": {
+            const n = parseInt(value, 10);
+            if (n >= 0 && n <= 6) settings.weekStartDay = n as 0|1|2|3|4|5|6;
+            break;
+          }
+          case "timeFormat":
+            if (value === "12h" || value === "24h") settings.timeFormat = value;
+            break;
+        }
+      }
+
+      return settings;
+    } catch {
+      // Tab doesn't exist or is empty — that's fine, use defaults
+      return {};
+    }
+  }
+
+  /**
+   * Resolve locale config with defaults for any missing fields.
+   * Priority: programmatic config.locale > Settings tab > defaults
+   */
+  private resolveLocale(
+    config: Partial<EmailConfig>,
+    tabSettings: Partial<LocaleConfig>,
+  ): Required<LocaleConfig> {
+    const l = config.locale ?? {};
+    return {
+      timezone: l.timezone ?? tabSettings.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+      dateFormat: l.dateFormat ?? tabSettings.dateFormat ?? "dd-MMM-yyyy",
+      locale: l.locale ?? tabSettings.locale ?? "en-GB",
+      weekStartDay: l.weekStartDay ?? tabSettings.weekStartDay ?? 0,
+      timeFormat: l.timeFormat ?? tabSettings.timeFormat ?? "24h",
+    };
+  }
+
+  /**
    * Apply data to template (dictionary replacement)
    */
   private async applyTemplateData(
     template: ParsedTemplate,
     recipient: Recipient,
     config: EmailConfig,
+    locale: Required<LocaleConfig>,
   ): Promise<ParsedTemplate> {
-    let subject = template.subject;
-    let body = template.body;
+
+    // Heal HTML tags injected inside {{ }} tokens by rich-text editors
+    let subject = this.healTokens(template.subject);
+    let body = this.healTokens(template.body);
 
     // Replace recipient tags
     for (const [key, value] of Object.entries(recipient.tags)) {
@@ -290,11 +378,15 @@ export class EmailEngine {
     }
 
     // Replace date tokens
-    body = this.applyDateTokens(body);
-    subject = this.applyDateTokens(subject);
+    body = this.applyDateTokens(body, locale);
+    subject = this.applyDateTokens(subject, locale);
+
+    // Replace time tokens
+    body = this.applyTimeTokens(body, locale);
+    subject = this.applyTimeTokens(subject, locale);
 
     // Replace greeting
-    const greeting = this.getGreeting();
+    const greeting = this.getGreeting(locale);
     body = body.replace(/{{GREETING}}/g, greeting);
 
     // Load and inject managed links
@@ -321,14 +413,14 @@ export class EmailEngine {
   /**
    * Apply date token replacements with robust logic
    */
-  private applyDateTokens(text: string): string {
+  private applyDateTokens(text: string, locale: Required<LocaleConfig>): string {
     const DATE_REGEX = /{{DATE:([^}]+)}}/g;
     const MONTH_REGEX = /{{MONTHNAME(?::([^}]+))?}}/g;
 
     let result = text.replace(DATE_REGEX, (match, token) => {
       try {
-        const date = this.parseDateToken(token);
-        return this.formatDate(date);
+        const date = this.parseDateToken(token, locale);
+        return this.formatDate(date, locale);
       } catch (e) {
         return match;
       }
@@ -340,7 +432,11 @@ export class EmailEngine {
         if (offset) {
           date.setMonth(date.getMonth() + parseInt(offset, 10));
         }
-        return date.toLocaleString("en-GB", { month: "long", year: "numeric" });
+        return date.toLocaleString(locale.locale, {
+          month: "long",
+          year: "numeric",
+          timeZone: locale.timezone,
+        });
       } catch (e) {
         return match;
       }
@@ -349,7 +445,29 @@ export class EmailEngine {
     return result;
   }
 
-  private parseDateToken(token: string): Date {
+  /**
+   * Apply time token replacements: {{TIME}} or {{TIME:timezone_label}}
+   */
+  private applyTimeTokens(text: string, locale: Required<LocaleConfig>): string {
+    const TIME_REGEX = /{{TIME(?::([^}]+))?}}/g;
+
+    return text.replace(TIME_REGEX, (match, param) => {
+      try {
+        const tz = param?.trim() || locale.timezone;
+        const opts: Intl.DateTimeFormatOptions = {
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: locale.timeFormat === "12h",
+          timeZone: tz,
+        };
+        return new Date().toLocaleTimeString(locale.locale, opts);
+      } catch (e) {
+        return match;
+      }
+    });
+  }
+
+  private parseDateToken(token: string, locale: Required<LocaleConfig>): Date {
     const now = new Date();
     const t = token.toLowerCase().trim();
 
@@ -366,6 +484,12 @@ export class EmailEngine {
       now.setDate(1);
       return now;
     }
+    if (t === "weekstart") {
+      const currentDay = now.getDay();
+      const diff = (currentDay - locale.weekStartDay + 7) % 7;
+      now.setDate(now.getDate() - diff);
+      return now;
+    }
 
     // Day Arithmetic: Today+7, Today-1
     const mathMatch = t.match(/today([+-])(\d+)/);
@@ -377,7 +501,7 @@ export class EmailEngine {
     }
 
     // Weekday Logic: Next Monday, Last Friday
-    const days = [
+    const dayNames = [
       "sunday",
       "monday",
       "tuesday",
@@ -386,7 +510,7 @@ export class EmailEngine {
       "friday",
       "saturday",
     ];
-    const targetDay = days.findIndex((d) => t.includes(d));
+    const targetDay = dayNames.findIndex((d) => t.includes(d));
     if (targetDay !== -1) {
       const currentDay = now.getDay();
       let diff = targetDay - currentDay;
@@ -402,18 +526,38 @@ export class EmailEngine {
     return now;
   }
 
-  private formatDate(d: Date): string {
-    const day = d.getDate().toString().padStart(2, "0");
-    const month = d.toLocaleString("en-GB", { month: "short" });
-    const year = d.getFullYear();
-    return `${day}-${month}-${year}`;
+  private formatDate(d: Date, locale: Required<LocaleConfig>): string {
+    const fmt = locale.dateFormat;
+
+    // Use Intl for locale-aware month names
+    const dayNum = d.getDate().toString().padStart(2, "0");
+    const monthShort = d.toLocaleString(locale.locale, { month: "short", timeZone: locale.timezone });
+    const monthLong = d.toLocaleString(locale.locale, { month: "long", timeZone: locale.timezone });
+    const monthNumeric = (d.getMonth() + 1).toString().padStart(2, "0");
+    const year = d.getFullYear().toString();
+    const yearShort = year.slice(-2);
+
+    return fmt
+      .replace("dd", dayNum)
+      .replace("MMMM", monthLong)
+      .replace("MMM", monthShort)
+      .replace("MM", monthNumeric)
+      .replace("yyyy", year)
+      .replace("yy", yearShort);
   }
 
   /**
-   * Get greeting based on time of day
+   * Get greeting based on time of day in the configured timezone
    */
-  private getGreeting(): string {
-    const hour = new Date().getHours();
+  private getGreeting(locale: Required<LocaleConfig>): string {
+    const hour = parseInt(
+      new Date().toLocaleString(locale.locale, {
+        hour: "2-digit",
+        hour12: false,
+        timeZone: locale.timezone,
+      }),
+      10,
+    );
     if (hour < 12) return "Good Morning";
     if (hour < 17) return "Good Afternoon";
     return "Good Evening";
@@ -440,12 +584,7 @@ export class EmailEngine {
      * Render tables in the body
      */
     private async renderTables(body: string): Promise<string> {
-      // Advanced Regex: 
-      // 1. Matches [Table]
-      // 2. Matches optional "Sheet:" followed by URL/ID
-      // 3. Matches optional "range:" followed by TabName!Range
-      // Handles trailing punctuation and HTML tags
-      const regex = /\[Table\]\s*(?:Sheet:\s*)?([^,\s<]+),\s*(?:range:\s*)?([^<]+?)(?=<|$)/gi;
+      const regex = createTableTagRegex();
       
       return this.replaceAsync(body, regex, async (match, sheetId, rangeRaw) => {      try {
         // Clean range string (remove quotes if any)
@@ -489,6 +628,35 @@ export class EmailEngine {
 
     // Second pass: replace with resolved values
     return str.replace(regex, () => replacements.shift() || "");
+  }
+
+  /**
+   * Validate a template before execution
+   */
+  async validateTemplate(
+    templateName: string,
+    sourceId: string,
+  ): Promise<ValidationResult> {
+    const template = await this.services.template.loadTemplate(
+      templateName,
+      sourceId,
+    );
+    return TemplateValidator.validate(template);
+  }
+
+  /**
+   * Strip HTML tags that rich-text editors inject inside {{ }} tokens.
+   * e.g. {{ <b>DATE</b>:Today }} → {{DATE:Today}}
+   */
+  private healTokens(text: string): string {
+    return text.replace(/\{\{(.*?)\}\}/g, (_match, inner: string) => {
+      const clean = inner
+        .replace(/<[^>]+>/g, "")
+        .replace(/&nbsp;/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      return "{{" + clean + "}}";
+    });
   }
 
   /**

@@ -1,4 +1,4 @@
-import { TemplateLoader, ParsedTemplate, TableRange } from '@universal-email/core';
+import { TemplateLoader, ParsedTemplate, TableRange, createTableTagRegex } from '@universal-email/core';
 import { google, docs_v1 } from 'googleapis';
 import { DocsToHtmlConverter } from '../utils/DocsToHtmlConverter';
 
@@ -54,7 +54,7 @@ export class NodeGoogleDocsTemplateLoader implements TemplateLoader {
   }
 
   private extractTableRanges(content: string): TableRange[] {
-    const tableRegex = /\[Table\]\s*Sheet:\s*([^,]+),\s*range:\s*([^<]+)/g;
+    const tableRegex = createTableTagRegex();
     const ranges: TableRange[] = [];
     let match;
 

@@ -1,18 +1,20 @@
 # Universal Email Automation Engine
 
 [![Google Apps Script](https://img.shields.io/badge/Platform-Google%20Apps%20Script-blue)](https://developers.google.com/apps-script)
+[![Microsoft 365](https://img.shields.io/badge/Platform-Microsoft%20365-0078D4)](https://learn.microsoft.com/graph/)
 [![Node.js](https://img.shields.io/badge/Node.js-TypeScript-green)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Tests](https://img.shields.io/badge/tests-Jest-green)](https://jestjs.io/)
 
-> Tired of copying data from Sheets into emails every morning? This engine connects your Google Docs templates with live Sheet data to generate formatted Gmail drafts automatically. Built for teams who spend too much time on manual reporting.
+> Tired of copying data from Sheets/Excel into emails every morning? This engine connects your templates with live data to generate formatted email drafts automatically. Built for teams who spend too much time on manual reporting.
 
-**Note:** Google's official mail merge samples use Gmail drafts with basic `{{placeholder}}` replacement. This engine goes further - full Google Docs templates with tables, formatting, managed links, and date logic.
+**Note:** Official mail merge samples use basic `{{placeholder}}` replacement. This engine goes further - full templates with tables, formatting, managed links, and date logic.
 
 ---
 
 ### Why this exists
 
-I started this as a simple script in one spreadsheet. Then another team wanted it. Then another. Soon I had 10 copies of the same code with hardcoded emails, links, and dates scattered everywhere. Updating one template meant hunting down files and breaking things.
+I started this as a simple script in one spreadshee then another reports then another. Soon I had 10 copies of the same code with hardcoded emails, links, and dates scattered everywhere. Updating one template meant hunting down files and breaking things.
 
 This engine solves that by separating **what changes** (templates, recipients, links) from **what doesn't** (the logic). Now non-technical teammates can edit templates in Google Docs and manage recipient lists in Sheets without touching code.
 
@@ -26,7 +28,7 @@ This engine solves that by separating **what changes** (templates, recipients, l
 ### What it's NOT
 
 - Not for marketing emails (use Mailchimp)
-- Not a SaaS product - runs in your Google Workspace
+- Not a SaaS product - runs in your Google Workspace or server
 - Not replacing judgment - still review drafts before sending
 - Not a marketplace add-on - it's your code, your control
 
@@ -56,7 +58,7 @@ The engine handles the tedious parts. Your team focuses on the actual content.
 
 ---
 
-## 📦 Two Versions: Pick Your Use Case
+## 📦 Three Versions: Pick Your Use Case
 
 ### 1. Google Apps Script Version (Production)
 
@@ -74,7 +76,7 @@ The engine handles the tedious parts. Your team focuses on the actual content.
 generateEmailDraft("Morning_Status");
 ```
 
-### 2. Node.js + TypeScript Version (Advanced)
+### 2. Node.js + Google Workspace (Advanced)
 
 **Best for:** Advanced deployments, Cloud Functions, CI/CD, higher quotas
 
@@ -95,25 +97,42 @@ const engine = createNodeGoogleEmailEngine({ auth, userEmail });
 await engine.generateEmailDraft('Morning_Status');
 ```
 
-### Why Two Versions?
+### 3. Node.js + Microsoft 365
 
-| Feature | Apps Script | Node.js |
-|---------|-------------|---------|
-| Setup | Copy-paste | npm install |
-| Timeout | 6 min | Unlimited |
-| Quotas | 1,500/day | Higher limits |
-| External APIs | Limited | Full access |
-| Testing | Manual | Jest unit tests |
-| Deployment | In Sheet | Cloud Functions, servers |
-| Best for | Internal teams | Production systems |
+**Best for:** Teams using Microsoft 365 / Outlook
 
-**Start with Apps Script.** Move to Node.js when you hit limits or need advanced features.
+- ✅ Outlook Mail integration via Microsoft Graph
+- ✅ OneDrive for template storage (Word documents)
+- ✅ Excel Online for data and recipient management
+- ✅ Unit testing with Jest
+- ✅ Same architecture as Google version
 
-### What About Microsoft/Outlook?
+**Location:** [`packages/nodejs-microsoft`](/packages/nodejs-microsoft)
 
-This engine is built for **Google Workspace** because that's what our teams use. The core (`packages/core/`) uses clean TypeScript interfaces that could support other platforms (Microsoft Graph, etc.) - but we're solving real Google Workspace problems first, not building abstraction for abstraction's sake.
+```typescript
+// Use in Node.js applications
+import { createNodeMicrosoftEmailEngine } from '@universal-email/nodejs-microsoft';
 
-If you need Outlook integration, the architecture supports it - you'd create a `nodejs-microsoft` package implementing the same interfaces.
+const engine = createNodeMicrosoftEmailEngine({ graphClient, userEmail });
+await engine.generateEmailDraft('Morning_Status');
+```
+
+### Version Comparison
+
+| Feature | Apps Script | Node.js (Google) | Node.js (Microsoft) |
+|---------|-------------|------------------|---------------------|
+| Setup | Copy-paste | npm install | npm install |
+| Platform | Google Workspace | Google Workspace | Microsoft 365 |
+| Email | Gmail Drafts | Gmail API | Outlook Mail |
+| Templates | Google Docs | Google Docs | Word Documents |
+| Data Source | Google Sheets | Google Sheets | Excel Online |
+| Timeout | 6 min | Unlimited | Unlimited |
+| Quotas | 1,500/day | Higher limits | Graph API limits |
+| Testing | Manual | Jest unit tests | Jest unit tests |
+| Deployment | In Sheet | Cloud Functions, servers | Cloud Functions, servers |
+| Best for | Internal teams | Production systems | Microsoft 365 teams |
+
+**Start with Apps Script** if you're in Google Workspace. **Move to Node.js** when you hit limits or need advanced features. **Choose Microsoft** if your team uses Microsoft 365.
 
 ---
 
@@ -152,6 +171,8 @@ generateEmailDraft("Monthly_Report", { testMode: true });
 
 ## 📦 Installation (Node.js)
 
+### Google Workspace
+
 ```bash
 npm install @universal-email/core @universal-email/nodejs-google
 ```
@@ -163,6 +184,24 @@ import { google } from 'googleapis';
 // Initialize with OAuth2
 const auth = new google.auth.OAuth2(...);
 const engine = createNodeGoogleEmailEngine({ auth, userEmail: 'you@company.com' });
+
+// Generate draft
+const result = await engine.generateEmailDraft('Monthly_Report');
+```
+
+### Microsoft 365
+
+```bash
+npm install @universal-email/core @universal-email/nodejs-microsoft
+```
+
+```typescript
+import { createNodeMicrosoftEmailEngine } from '@universal-email/nodejs-microsoft';
+import { Client } from '@microsoft/microsoft-graph-client';
+
+// Initialize with Graph client
+const graphClient = Client.init({ authProvider: ... });
+const engine = createNodeMicrosoftEmailEngine({ graphClient, userEmail: 'you@company.com' });
 
 // Generate draft
 const result = await engine.generateEmailDraft('Monthly_Report');
@@ -395,18 +434,23 @@ The Node.js version uses clean TypeScript interfaces for maintainability and tes
 │  @universal-email/core               │
 │  - EmailEngine (orchestration)       │
 │  - Types & Interfaces                │
-├─────────────────────────────────────┤
-│  @universal-email/nodejs-google      │
-│  - Google APIs implementation        │
-└─────────────────────────────────────┘
+├─────────────────────────────────────┼─────────────────┤
+│  Platform Implementations             │
+├─────────────────────────────────────┼─────────────────┤
+│  @universal-email/nodejs-google      │  @universal-email/nodejs-microsoft
+│  - Gmail API                         │  - Outlook Mail (Graph API)
+│  - Google Docs                       │  - Word Online (OneDrive)
+│  - Google Sheets                     │  - Excel Online
+│  - Google Drive                      │
+└─────────────────────────────────────┴─────────────────┘
 ```
 
 ### Why This Design?
 
-1. **Separation of Concerns** - Core logic independent of Google APIs
-2. **Testability** - Mock interfaces for unit tests (Jest, Vitest)
+1. **Separation of Concerns** - Core logic independent of platform APIs
+2. **Testability** - Mock interfaces for unit tests (Jest)
 3. **Type Safety** - TypeScript catches errors at compile time
-4. **Extensibility** - Could support other platforms (Outlook, etc.) if needed
+4. **Extensibility** - Multiple platform implementations (Google, Microsoft)
 
 Most mail merge scripts keep everything in one file. This structure makes it easier to test, extend, and deploy to different environments.
 
@@ -415,12 +459,58 @@ Most mail merge scripts keep everything in one file. This structure makes it eas
 ```
 packages/
 ├── core/                    # Platform-agnostic orchestration
-└── nodejs-google/           # Google APIs implementation
+├── nodejs-google/           # Google Workspace implementation
+└── nodejs-microsoft/        # Microsoft 365 implementation
 ```
 
-### What About Microsoft/Outlook?
+### Core Interfaces
 
-The interfaces in `packages/core/` could support other email providers. If you need Outlook integration, you'd create a `nodejs-microsoft` package implementing the same interfaces. But we're focused on solving real Google Workspace problems first.
+The `@universal-email/core` package defines clean interfaces:
+
+- `EmailProvider` - Send/save emails (Gmail, Outlook)
+- `TemplateLoader` - Load templates (Google Docs, Word)
+- `DataStore` - Read structured data (Sheets, Excel)
+- `TableRenderer` - Render tables with formatting
+
+Each platform package implements these interfaces using native APIs.
+
+---
+
+## 🧪 Testing
+
+The Node.js packages include comprehensive unit tests using Jest:
+
+```bash
+# Run all tests
+npm test
+
+# Run with coverage
+npm run test:coverage
+
+# Test specific package
+npm test -w @universal-email/core
+npm test -w @universal-email/nodejs-google
+npm test -w @universal-email/nodejs-microsoft
+```
+
+### Test Coverage
+
+- **Core Package**: Email engine orchestration, template parsing, date/time logic
+- **Google Package**: Gmail API, Google Docs, Sheets integration
+- **Microsoft Package**: Outlook Mail, Word Online, Excel Online integration
+
+### Running Tests
+
+```bash
+# Core package tests
+cd packages/core && npm test
+
+# Google package tests
+cd packages/nodejs-google && npm test
+
+# Microsoft package tests
+cd packages/nodejs-microsoft && npm test
+```
 
 ---
 
@@ -432,6 +522,8 @@ Built to eliminate manual reporting toil in WFM teams. This project demonstrates
 - **Google Apps Script** - Production automation in Workspace
 - **Node.js & TypeScript** - Modular, type-safe system design
 - **System Architecture** - Separation of concerns, dependency injection
+- **Microsoft 365** - Graph API integration (Outlook, OneDrive, Excel Online)
+- **Testing** - Jest unit tests for maintainability
 - **Real-world Problem Solving** - Solving actual pain points, not imaginary ones
 
 ---
