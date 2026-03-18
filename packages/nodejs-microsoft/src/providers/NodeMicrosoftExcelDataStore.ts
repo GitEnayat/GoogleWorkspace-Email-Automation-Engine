@@ -54,7 +54,7 @@ export class NodeMicrosoftExcelDataStore implements DataStore {
     const lastRowNumber = lastRowResponse.address?.match(/:(\d+)$/);
     const nextRow = lastRowNumber ? parseInt(lastRowNumber[1], 10) + 1 : 1;
 
-    const range = `${tabName}!A${nextRow}:${String.fromCharCode(64 + row.length)}${nextRow}`;
+    const range = `A${nextRow}:${String.fromCharCode(65 + row.length - 1)}${nextRow}`;
 
     await this.client
       .api(
