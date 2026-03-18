@@ -6,6 +6,8 @@
 
 > Tired of copying data from Sheets into emails every morning? This engine connects your Google Docs templates with live Sheet data to generate formatted Gmail drafts automatically. Built for teams who spend too much time on manual reporting.
 
+**Note:** Google's official mail merge samples use Gmail drafts with basic `{{placeholder}}` replacement. This engine goes further - full Google Docs templates with tables, formatting, managed links, and date logic.
+
 ---
 
 ### Why this exists
@@ -26,6 +28,7 @@ This engine solves that by separating **what changes** (templates, recipients, l
 - Not for marketing emails (use Mailchimp)
 - Not a SaaS product - runs in your Google Workspace
 - Not replacing judgment - still review drafts before sending
+- Not a marketplace add-on - it's your code, your control
 
 ---
 
@@ -150,11 +153,11 @@ generateEmailDraft("Monthly_Report", { testMode: true });
 ## 📦 Installation (Node.js)
 
 ```bash
-npm install @universal-email/core @universal-email/nodejs-client
+npm install @universal-email/core @universal-email/nodejs-google
 ```
 
 ```typescript
-import { createNodeGoogleEmailEngine } from '@universal-email/nodejs-client';
+import { createNodeGoogleEmailEngine } from '@universal-email/nodejs-google';
 import { google } from 'googleapis';
 
 // Initialize with OAuth2
@@ -401,9 +404,11 @@ The Node.js version uses clean TypeScript interfaces for maintainability and tes
 ### Why This Design?
 
 1. **Separation of Concerns** - Core logic independent of Google APIs
-2. **Testability** - Mock interfaces for unit tests
+2. **Testability** - Mock interfaces for unit tests (Jest, Vitest)
 3. **Type Safety** - TypeScript catches errors at compile time
 4. **Extensibility** - Could support other platforms (Outlook, etc.) if needed
+
+Most mail merge scripts keep everything in one file. This structure makes it easier to test, extend, and deploy to different environments.
 
 ### Package Structure
 

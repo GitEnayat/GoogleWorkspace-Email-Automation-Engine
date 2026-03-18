@@ -7,16 +7,18 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build -w @universal-email/core && npm run build -w @universal-email/nodejs-google",
+    "build": "npm run build -w @universal-email/core && npm run build -w @universal-email/nodejs-google && npm run build -w @universal-email/nodejs-microsoft",
     "build:core": "npm run build -w @universal-email/core",
     "build:nodejs": "npm run build -w @universal-email/nodejs-google",
+    "build:microsoft": "npm run build -w @universal-email/nodejs-microsoft",
     "test": "npm run test -w @universal-email/core",
     "test:coverage": "npm run test:coverage -w @universal-email/core",
     "lint": "eslint packages/*/src/**/*.ts",
     "format": "prettier --write \"packages/*/src/**/*.ts\"",
     "clean": "rm -rf packages/*/dist",
     "dev:core": "npm run dev -w @universal-email/core",
-    "dev:nodejs": "npm run dev -w @universal-email/nodejs-google"
+    "dev:nodejs": "npm run dev -w @universal-email/nodejs-google",
+    "dev:microsoft": "npm run dev -w @universal-email/nodejs-microsoft"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^7.0.0",

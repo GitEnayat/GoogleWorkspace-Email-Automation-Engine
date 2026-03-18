@@ -1,0 +1,25 @@
+{
+  "name": "@universal-email/nodejs-microsoft",
+  "version": "1.0.0",
+  "description": "Microsoft 365 implementation using Graph API - Outlook Mail, OneDrive, Excel Online",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@azure/identity": "^4.0.0",
+    "@microsoft/microsoft-graph-client": "^3.0.7",
+    "@universal-email/core": "^2.0.0",
+    "mammoth": "^1.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.4.0"
+  },
+  "peerDependencies": {
+    "isomorphic-fetch": "^3.0.0"
+  }
+}
