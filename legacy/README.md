@@ -1,7 +1,6 @@
 # Universal Email Automation Engine
 
 [![Google Apps Script](https://img.shields.io/badge/Platform-Google%20Apps%20Script-blue)](https://developers.google.com/apps-script)
-[![Node.js](https://img.shields.io/badge/Node.js-TypeScript-green)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 > Tired of copying data from Sheets into emails every morning? This engine connects your Google Docs templates with live Sheet data to generate formatted Gmail drafts automatically. Built for teams who spend too much time on manual reporting.
@@ -10,7 +9,7 @@
 
 ### Why this exists
 
-I started this as a simple script in one spreadsheet. Then another team wanted it. Then another. Soon I had 10 copies of the same code with hardcoded emails, links, and dates scattered everywhere. Updating one template meant hunting down files and breaking things.
+I started this as a simple script in one spreadsheet. Then another report and another. Soon I had many copies of the same code with hardcoded emails for different reports, links, and dates scattered everywhere. Updating one template meant hunting down files and breaking things.
 
 This engine solves that by separating **what changes** (templates, recipients, links) from **what doesn't** (the logic). Now non-technical teammates can edit templates in Google Docs and manage recipient lists in Sheets without touching code.
 
@@ -20,12 +19,6 @@ This engine solves that by separating **what changes** (templates, recipients, l
 - **Centralizes data** - Recipients, links, and settings live in Sheets
 - **Standardizes output** - Same formatting every time, no copy-paste errors
 - **Saves time** - What took 15 minutes now takes 1 click
-
-### What it's NOT
-
-- Not for marketing emails (use Mailchimp)
-- Not a SaaS product - runs in your Google Workspace
-- Not replacing judgment - still review drafts before sending
 
 ---
 
@@ -53,75 +46,79 @@ The engine handles the tedious parts. Your team focuses on the actual content.
 
 ---
 
-## 📦 Two Versions: Pick Your Use Case
+## 📦 Using as a Library (Recommended)
 
-### 1. Google Apps Script Version (Production)
+Install this engine as a **Library** to use it across multiple Google Sheets without duplicating code.`
 
-**Best for:** Teams using Google Workspace who want zero setup
+### Step 1: Deploy as Library
 
-- ✅ Runs directly in Google Sheets
-- ✅ No build steps, no dependencies
-- ✅ Non-technical users can maintain
-- ✅ Free, no server costs
+1. Open the Apps Script project containing this engine
+2. Click **Deploy > New deployment**
+3. Select type: **Library**
+4. Click **Deploy**
+5. Copy the **Script ID** (you'll need this)
 
-**Location:** [`/legacy`](/legacy)
+### Step 2: Add Library to Your Spreadsheet
+
+1. Open your spreadsheet (e.g., "HR Reports")
+2. Go to **Extensions > Apps Script**
+3. Click **Libraries +** (left sidebar)
+4. Paste the Script ID from Step 1
+5. Select latest version and click **Add**
+
+### Step 3: Write Runner Code
+
+Create a simple function in your spreadsheet's script:
 
 ```javascript
-// Just call from your Sheet's script editor
-generateEmailDraft("Morning_Status");
+/**
+ * @OnlyCurrentDoc
+ */
+function sendMorningReport() {
+  // Call the library (default identifier is 'EmailEngine')
+  EmailEngine.generateEmailDraft("Morning_Status", {
+    testMode: false
+  });
+}
+
+function testBeforeDeploy() {
+  // Safety check - sends to you only
+  EmailEngine.generateEmailDraft("Morning_Status", {
+    testMode: true,
+    action: "DRY_RUN"
+  });
+}
 ```
 
-### 2. Node.js + TypeScript Version (Advanced)
+### Benefits of Library Approach
 
-**Best for:** Advanced deployments, Cloud Functions, CI/CD, higher quotas
-
-- ✅ No 6-minute timeout limit
-- ✅ Higher sending quotas
-- ✅ Integrate with external APIs
-- ✅ Unit testing with Jest
-- ✅ Better error handling & monitoring
-- ✅ Deploy to Cloud Functions, Vercel, servers
-
-**Location:** [`packages/nodejs-google`](/packages/nodejs-google)
-
-```typescript
-// Use in Node.js applications
-import { createNodeGoogleEmailEngine } from '@universal-email/nodejs-google';
-
-const engine = createNodeGoogleEmailEngine({ auth, userEmail });
-await engine.generateEmailDraft('Morning_Status');
-```
-
-### Why Two Versions?
-
-| Feature | Apps Script | Node.js |
-|---------|-------------|---------|
-| Setup | Copy-paste | npm install |
-| Timeout | 6 min | Unlimited |
-| Quotas | 1,500/day | Higher limits |
-| External APIs | Limited | Full access |
-| Testing | Manual | Jest unit tests |
-| Deployment | In Sheet | Cloud Functions, servers |
-| Best for | Internal teams | Production systems |
-
-**Start with Apps Script.** Move to Node.js when you hit limits or need advanced features.
-
-### What About Microsoft/Outlook?
-
-This engine is built for **Google Workspace** because that's what our teams use. The core (`packages/core/`) uses clean TypeScript interfaces that could support other platforms (Microsoft Graph, etc.) - but we're solving real Google Workspace problems first, not building abstraction for abstraction's sake.
-
-If you need Outlook integration, the architecture supports it - you'd create a `nodejs-microsoft` package implementing the same interfaces.
+- ✅ **Single source of truth** - Update engine once, all spreadsheets benefit
+- ✅ **No code duplication** - Each spreadsheet only has runner functions
+- ✅ **Easy maintenance** - Fix bugs in one place
+- ✅ **Version control** - Pin specific versions or use latest
 
 ---
 
-## 🚀 Quick Start (Apps Script)
+## 📁 Project Structure
 
-### 1. Copy Files
+```
+src/
+├── EmailEngine.js        # Main orchestration (entry point)
+├── TemplateService.js    # Template parsing, date tokens, table rendering
+├── ContentManager.js     # CMS links, recipients, signature generation
+└── TemplateValidator.js  # Pre-flight template validation
+```
+
+---
+
+## 🚀 Quick Start (Single Project)
+
+If you just want to use this in one spreadsheet (not as a library):
 
 1. Open your Google Sheet
 2. Go to **Extensions > Apps Script**
-3. Copy all 4 files from [`/legacy`](/legacy) into the script editor
-4. Update the `CONFIG` object:
+3. Copy all 4 files from `src/` into the script editor
+4. Update the `CONFIG` object in `EmailEngine.js`:
 
 ```javascript
 const CONFIG = {
@@ -132,37 +129,9 @@ const CONFIG = {
 };
 ```
 
-### 2. Use It
-
+Then use:
 ```javascript
-// Create a draft
 generateEmailDraft("Monthly_Report");
-
-// Send directly
-generateEmailDraft("Monthly_Report", { action: "SEND" });
-
-// Test mode (sends to you only)
-generateEmailDraft("Monthly_Report", { testMode: true });
-```
-
----
-
-## 📦 Installation (Node.js)
-
-```bash
-npm install @universal-email/core @universal-email/nodejs-client
-```
-
-```typescript
-import { createNodeGoogleEmailEngine } from '@universal-email/nodejs-client';
-import { google } from 'googleapis';
-
-// Initialize with OAuth2
-const auth = new google.auth.OAuth2(...);
-const engine = createNodeGoogleEmailEngine({ auth, userEmail: 'you@company.com' });
-
-// Generate draft
-const result = await engine.generateEmailDraft('Monthly_Report');
 ```
 
 ---
@@ -357,15 +326,10 @@ All runs are logged to `System_Logs` sheet: Timestamp, User, Template, Status, D
 
 ## ⚠️ Limitations & Quotas
 
-### Apps Script Version
-- **Execution time**: 6-minute limit per run
+- **Execution time**: 6-minute Apps Script limit
 - **Gmail quotas**: Workspace: 1,500/day | Consumer: 100/day
 - **Cache limit**: 100KB for logo caching
-
-### Node.js Version
-- **Execution time**: No limit (depends on deployment)
-- **Gmail quotas**: Higher limits with Google Cloud
-- **Cache**: Configurable (Redis, Memory, etc.)
+- **Internal use only**: Not for bulk marketing
 
 ---
 
@@ -381,56 +345,4 @@ Everything runs in your Google Workspace. No data leaves Google's servers.
 
 ---
 
-## 🏗️ Architecture (Node.js Version)
-
-The Node.js version uses clean TypeScript interfaces for maintainability and testability:
-
-```
-┌─────────────────────────────────────┐
-│  Your Application                    │
-├─────────────────────────────────────┤
-│  @universal-email/core               │
-│  - EmailEngine (orchestration)       │
-│  - Types & Interfaces                │
-├─────────────────────────────────────┤
-│  @universal-email/nodejs-google      │
-│  - Google APIs implementation        │
-└─────────────────────────────────────┘
-```
-
-### Why This Design?
-
-1. **Separation of Concerns** - Core logic independent of Google APIs
-2. **Testability** - Mock interfaces for unit tests
-3. **Type Safety** - TypeScript catches errors at compile time
-4. **Extensibility** - Could support other platforms (Outlook, etc.) if needed
-
-### Package Structure
-
-```
-packages/
-├── core/                    # Platform-agnostic orchestration
-└── nodejs-google/           # Google APIs implementation
-```
-
-### What About Microsoft/Outlook?
-
-The interfaces in `packages/core/` could support other email providers. If you need Outlook integration, you'd create a `nodejs-microsoft` package implementing the same interfaces. But we're focused on solving real Google Workspace problems first.
-
----
-
-## 👤 Author
-
-**Enayatullh** | Operations Engineer
-
-Built to eliminate manual reporting toil in WFM teams. This project demonstrates:
-- **Google Apps Script** - Production automation in Workspace
-- **Node.js & TypeScript** - Modular, type-safe system design
-- **System Architecture** - Separation of concerns, dependency injection
-- **Real-world Problem Solving** - Solving actual pain points, not imaginary ones
-
----
-
-## 📄 License
-
-MIT License
+_License: MIT_

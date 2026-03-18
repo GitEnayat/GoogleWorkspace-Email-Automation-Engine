@@ -1,13 +1,15 @@
 {
-  "name": "@universal-email/node-google-adapter",
+  "name": "@universal-email/nodejs-google",
   "version": "2.0.0",
-  "description": "Node.js Google Cloud adapter for Universal Email Automation Engine",
+  "description": "Node.js + TypeScript client for Google Workspace - Cloud Functions, servers, CI/CD deployments",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "test": "jest",
+    "test:coverage": "jest --coverage"
   },
   "dependencies": {
     "@universal-email/core": "^2.0.0",
@@ -16,6 +18,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
+    "@types/node-fetch": "^2.6.11",
     "typescript": "^5.4.0"
   },
   "files": [

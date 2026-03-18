@@ -1,27 +1,22 @@
 {
   "name": "universal-email-automation",
   "version": "2.0.0",
-  "description": "A configuration-driven email orchestration engine with multi-platform support",
+  "description": "Email automation for Google Workspace - Apps Script for teams, Node.js for advanced deployments",
   "private": true,
   "workspaces": [
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build -w @universal-email/core && npm run build -w @universal-email/apps-script-adapter && npm run build -w @universal-email/cli",
+    "build": "npm run build -w @universal-email/core && npm run build -w @universal-email/nodejs-google",
     "build:core": "npm run build -w @universal-email/core",
-    "build:adapter": "npm run build -w @universal-email/apps-script-adapter",
-    "build:ms": "npm run build -w @universal-email/microsoft-adapter",
-    "build:node-google": "npm run build -w @universal-email/node-google-adapter",
-    "build:cloud": "npm run build -w @universal-email/cloud-function",
-    "build:cli": "npm run build -w @universal-email/cli",
+    "build:nodejs": "npm run build -w @universal-email/nodejs-google",
     "test": "npm run test -w @universal-email/core",
     "test:coverage": "npm run test:coverage -w @universal-email/core",
     "lint": "eslint packages/*/src/**/*.ts",
     "format": "prettier --write \"packages/*/src/**/*.ts\"",
     "clean": "rm -rf packages/*/dist",
     "dev:core": "npm run dev -w @universal-email/core",
-    "dev:adapter": "npm run dev -w @universal-email/apps-script-adapter",
-    "dev:cli": "npm run dev -w @universal-email/cli"
+    "dev:nodejs": "npm run dev -w @universal-email/nodejs-google"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^7.0.0",
@@ -45,7 +40,8 @@
     "nodejs",
     "google-apps-script",
     "email-templates",
-    "workflow"
+    "workflow",
+    "google-workspace"
   ],
   "author": "Enayatullh",
   "license": "MIT"
