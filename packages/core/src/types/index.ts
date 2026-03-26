@@ -6,13 +6,21 @@
  * Email draft representation
  */
 export interface EmailDraft {
+  /** Unique identifier for the email draft. */
   id: string;
+  /** Subject line of the email. */
   subject: string;
+  /** Plain text body of the email. */
   body: string;
+  /** List of primary recipients' email addresses. */
   to: string[];
+  /** Optional list of CC recipients' email addresses. */
   cc?: string[];
+  /** Optional list of BCC recipients' email addresses. */
   bcc?: string[];
+  /** Timestamp when the draft was created. */
   createdAt: Date;
+  /** Timestamp when the draft was last updated. */
   updatedAt: Date;
 }
 
@@ -20,12 +28,19 @@ export interface EmailDraft {
  * Template structure after parsing
  */
 export interface ParsedTemplate {
+  /** Name or identifier of the template. */
   name: string;
+  /** Subject line extracted from the template. */
   subject: string;
+  /** Body content extracted from the template, potentially HTML. */
   body: string;
+  /** Optional default 'To' recipient from the template. */
   to?: string;
+  /** Optional default 'CC' recipient from the template. */
   cc?: string;
-  tags: string[]; // e.g., ['FirstName', 'Team', 'Date']
+  /** List of recognized placeholder tags (e.g., ['FirstName', 'Team', 'Date']). */
+  tags: string[];
+  /** Optional array of table ranges identified in the template. */
   tableRanges?: TableRange[];
 }
 
@@ -33,8 +48,11 @@ export interface ParsedTemplate {
  * Table range from a data source (e.g., Google Sheet)
  */
 export interface TableRange {
-  source: string; // e.g., spreadsheet ID
-  range: string; // e.g., 'Q1_Results'!A1:E10
+  /** Identifier of the data source (e.g., spreadsheet ID). */
+  source: string;
+  /** Range in A1 notation (e.g., 'Q1_Results'!A1:E10). */
+  range: string;
+  /** Indicates whether original formatting of the table should be preserved. */
   preserveFormatting: boolean;
 }
 
@@ -63,32 +81,36 @@ export interface LocaleConfig {
  * Configuration for email generation
  */
 export interface EmailConfig {
-  // Template source
+  /** ID of the document containing the email template. */
   templateDocumentId?: string;
 
-  // Data source
+  /** ID of the spreadsheet/document containing recipient data. */
   directorySheetId?: string;
+  /** Name of the tab within the directory sheet that contains recipient data. */
   recipientsTabName?: string;
 
-  // Recipient resolution
+  /** Column header for recipient email addresses in the directory sheet. */
   recipientEmailColumn?: string;
+  /** Column headers for recipient data to be used as tags in the template. */
   recipientTagColumns?: string[];
 
-  // Branding
+  /** URL of the logo to include in the email. */
   logoUrl?: string;
+  /** ID of the template for user signatures. */
   signatureTemplateId?: string;
 
-  // Execution mode
+  /** If true, no drafts or emails will be sent; only processing and logging occur. */
   dryRun?: boolean;
+  /** If true, generates email for the current user only for testing purposes. */
   testMode?: boolean;
 
-  // Action: create draft or send
+  /** Action to perform: 'DRAFT' to create drafts, 'SEND' to send emails. */
   emailAction?: "DRAFT" | "SEND";
 
-  // Batch rate limiting
+  /** Delay in milliseconds between processing each email in a batch. */
   batchDelayMs?: number;
 
-  // Locale / regional preferences
+  /** Locale and regional preferences for date/time formatting. */
   locale?: LocaleConfig;
 
   /**
@@ -100,7 +122,10 @@ export interface EmailConfig {
   /** Tab name for engine settings. Default: "Engine_Settings" */
   settingsTabName?: string;
 
-  // Runtime overrides
+  /**
+   * Runtime overrides or additional configuration properties.
+   * @deprecated Consider using specific configuration properties instead of generic string keys.
+   */
   [key: string]: any;
 }
 
@@ -108,8 +133,11 @@ export interface EmailConfig {
  * Recipient with resolved email and metadata
  */
 export interface Recipient {
+  /** The email address of the recipient. */
   email: string;
+  /** Key-value pairs of tags resolved for the recipient, used for template replacement. */
   tags: Record<string, string>;
+  /** Optional user profile information for the recipient. */
   profile?: UserProfile;
 }
 
@@ -117,9 +145,13 @@ export interface Recipient {
  * User profile for signatures
  */
 export interface UserProfile {
+  /** Full name of the user. */
   name: string;
+  /** Job title of the user. */
   title: string;
+  /** Department or team of the user. */
   department: string;
+  /** Optional HTML signature content. */
   signature?: string;
 }
 
@@ -127,22 +159,33 @@ export interface UserProfile {
  * Link for managed URL replacement
  */
 export interface ManagedLink {
+  /** Unique key for the managed link. */
   key: string;
+  /** The URL associated with the key. */
   url: string;
+  /** Optional human-readable label for the link. */
   label?: string;
 }
 
 /**
- * Execution result
+ * Execution result of an email generation operation.
  */
 export interface ExecutionResult {
+  /** True if the operation was successful, false otherwise. */
   success: boolean;
+  /** Optional ID of a single generated draft (if only one was generated). */
   draftId?: string;
+  /** Optional list of IDs for all generated drafts in a batch operation. */
   draftIds?: string[];
+  /** Number of recipients processed. */
   recipientCount: number;
+  /** Mode in which the engine was run ('PROD', 'TEST', or 'DRY_RUN'). */
   mode: "PROD" | "TEST" | "DRY_RUN";
+  /** Duration of the execution in milliseconds. */
   duration: number;
+  /** Optional error message if the operation failed. */
   error?: string;
+  /** Audit trail of log entries generated during execution. */
   logs: LogEntry[];
 }
 
@@ -150,10 +193,15 @@ export interface ExecutionResult {
  * Log entry for audit trail
  */
 export interface LogEntry {
+  /** Timestamp of the log entry. */
   timestamp: Date;
+  /** Severity level of the log entry. */
   level: "INFO" | "WARN" | "ERROR";
+  /** Component that generated the log entry (e.g., 'EmailEngine', 'TemplateLoader'). */
   component: string;
+  /** The log message. */
   message: string;
+  /** Optional additional context for the log entry. */
   context?: Record<string, any>;
 }
 
@@ -161,8 +209,11 @@ export interface LogEntry {
  * Validation result from template pre-flight checks
  */
 export interface ValidationResult {
+  /** True if the template is considered valid, false otherwise. */
   valid: boolean;
+  /** List of error messages found during validation. */
   errors: string[];
+  /** List of warning messages found during validation. */
   warnings: string[];
 }
 
@@ -171,8 +222,9 @@ export interface ValidationResult {
  * Returns a new instance each call to avoid global-flag lastIndex bugs.
  *
  * Matches both documented formats:
- *   [Table] Sheet: URL, range: 'Tab'!A1:D10
- *   [Table] URL, 'Tab'!A1:D10
+ *   [Table] Sheet: URL, range: 'Tab'!A1:E10
+ *   [Table] URL, 'Tab'!A1:E10
+ * @returns A new RegExp object for matching table tags.
  */
 export function createTableTagRegex(): RegExp {
   return /\[Table\]\s*(?:Sheet:\s*)?([^,\s<]+),\s*(?:range:\s*)?([^<]+?)(?=<|$)/gi;

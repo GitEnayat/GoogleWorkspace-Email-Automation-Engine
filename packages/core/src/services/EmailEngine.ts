@@ -15,10 +15,20 @@ import {
 import { PlatformServices } from "../providers";
 import { TemplateValidator } from "./TemplateValidator";
 
+/**
+ * The core orchestration engine for generating and sending emails.
+ * It coordinates with various platform services to load templates, resolve recipients,
+ * apply data, and manage email drafts/sends.
+ */
 export class EmailEngine {
   private services: PlatformServices;
   private defaultConfig: Partial<EmailConfig>;
 
+  /**
+   * Creates an instance of EmailEngine.
+   * @param services An object containing platform-specific service implementations.
+   * @param defaultConfig Optional default configuration to be merged with user-provided configs.
+   */
   constructor(
     services: PlatformServices,
     defaultConfig: Partial<EmailConfig> = {},
@@ -28,7 +38,12 @@ export class EmailEngine {
   }
 
   /**
-   * Generate a single email draft
+   * Generates a single email draft or sends an email based on the provided template and configuration.
+   * This method handles template loading, recipient resolution, data application,
+   * and interaction with the email provider to create/update drafts or send emails.
+   * @param templateName The name of the template to use.
+   * @param userConfig Optional configuration specific to this generation task, which overrides defaults.
+   * @returns A promise that resolves with the execution result.
    */
   async generateEmailDraft(
     templateName: string,
@@ -62,6 +77,7 @@ export class EmailEngine {
       let recipients = await this.resolveRecipients(config);
 
       // 3. Apply test mode or default to current user if no directory is configured
+      // If in test mode or no recipient directory is set, use the current user's email as the sole recipient.
       if (
         config.testMode ||
         (!config.directorySheetId && recipients.length === 0)
@@ -85,6 +101,7 @@ export class EmailEngine {
       const finalRecipients = recipients;
 
       // 4. Load locale settings once (from Settings tab + programmatic overrides)
+      // Retrieves locale configuration from a spreadsheet and merges it with programmatic config.
       const tabSettings = await this.loadSettingsFromStore(config);
       const locale = this.resolveLocale(config, tabSettings);
 
@@ -133,7 +150,7 @@ export class EmailEngine {
             draftId,
           });
         } else {
-          // Case 2: Check for existing thread to reply to (if supported)
+          // Case 2: Check for existing thread to reply to (if supported by EmailProvider)
           let threadId: string | null = null;
 
           if (this.services.email.findThreadBySubject) {
@@ -207,7 +224,12 @@ export class EmailEngine {
   }
 
   /**
-   * Generate multiple drafts in batch
+   * Generates multiple email drafts in a batch, with optional delays between each.
+   * This method iterates through a list of template names, calling `generateEmailDraft` for each,
+   * and includes safeguards against exceeding execution time limits.
+   * @param templateNames An array of template names to process.
+   * @param config Optional configuration for the batch operation.
+   * @returns A promise that resolves with an array of execution results for each template.
    */
   async generateBatchDrafts(
     templateNames: string[],
@@ -244,7 +266,10 @@ export class EmailEngine {
   }
 
   /**
-   * Resolve recipients from data source
+   * Resolves a list of recipients by fetching data from the configured data store.
+   * Filters out rows with invalid email addresses.
+   * @param config The email configuration containing directory and recipient column details.
+   * @returns A promise that resolves with an array of `Recipient` objects.
    */
   private async resolveRecipients(
     config: Partial<EmailConfig>,
@@ -258,14 +283,26 @@ export class EmailEngine {
       config.recipientsTabName,
     );
 
-    return data.map((row: any) => ({
-      email: row[config.recipientEmailColumn || "Email"],
-      tags: this.extractTags(row, config.recipientTagColumns || []),
-    }));
+    return data
+      .filter((row: any) => {
+        const email = row[config.recipientEmailColumn || 'Email'];
+        if (!this.isValidEmail(email)) {
+          this.services.logger.warn('EmailEngine', 'Invalid email skipped', { email });
+          return false;
+        }
+        return true;
+      })
+      .map((row: any) => ({
+        email: row[config.recipientEmailColumn || 'Email'].trim(),
+        tags: this.extractTags(row, config.recipientTagColumns || []),
+      }));
   }
 
   /**
-   * Extract tags from a row
+   * Extracts tags (key-value pairs) from a given data row based on specified tag columns.
+   * @param row The data row (record) from which to extract tags.
+   * @param tagColumns An array of column names to treat as tags.
+   * @returns A record of extracted tags.
    */
   private extractTags(
     row: Record<string, any>,
@@ -281,17 +318,73 @@ export class EmailEngine {
   }
 
   /**
-   * Load locale settings from a Settings tab in the spreadsheet/workbook.
-   * Returns a partial LocaleConfig — only keys present in the tab are set.
-   *
-   * Expected tab layout (two columns):
-   *   | Setting      | Value            |
-   *   |--------------|------------------|
-   *   | timezone     | America/New_York |
-   *   | dateFormat   | MM/dd/yyyy       |
-   *   | locale       | en-US            |
-   *   | weekStartDay | 1                |
-   *   | timeFormat   | 12h              |
+   * Escapes special regular expression characters in a string.
+   * @param str The string to escape.
+   * @returns The escaped string.
+   */
+  private escapeRegex(str: string): string {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  /**
+   * Sanitize URL to prevent XSS attacks.
+   * Ensures only safe protocols (http, https, mailto) are allowed.
+   * @param url The URL string to sanitize.
+   * @returns The sanitized URL or a placeholder if unsafe/invalid.
+   */
+  private sanitizeUrl(url: string): string {
+    try {
+      const parsed = new URL(url);
+      if (!['http:', 'https:', 'mailto:'].includes(parsed.protocol)) {
+        return '#blocked-unsafe-url';
+      }
+      return url;
+    } catch {
+      return '#invalid-url';
+    }
+  }
+
+  /**
+   * Escapes HTML special characters in a string to prevent XSS.
+   * @param str The string to HTML escape.
+   * @returns The HTML-escaped string.
+   */
+  private htmlEscape(str: string): string {
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  /**
+   * Validates if a given string is a well-formed email address.
+   * Performs basic format, length, and content checks.
+   * @param email The string to validate as an email address.
+   * @returns True if the email is valid, false otherwise.
+   */
+  private isValidEmail(email: string): boolean {
+    if (!email || typeof email !== 'string') return false;
+    // Check for newlines which are invalid in email addresses
+    if (email.includes('\n') || email.includes('\r')) return false;
+    const trimmed = email.trim();
+    // Email addresses usually have a maximum length of 254 characters
+    if (trimmed.length > 254) return false;
+    // Regex for basic email format validation
+    return /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$/.test(trimmed);
+  }
+
+  /**
+   * Loads locale settings from a designated "Settings" tab within a spreadsheet/workbook.
+   * @param config The email configuration, specifying `settingsSheetId` and `settingsTabName`.
+   * @returns A promise that resolves with a partial `LocaleConfig` object containing settings found.
+   * @example
+   * // Expected tab layout for "Engine_Settings":
+   * // | Setting    | Value            |
+   * // |------------|------------------|
+   * // | timezone   | Asia/Kuala_Lumpur|
+   * // | dateFormat | dd-MMM-yyyy      |
    */
   private async loadSettingsFromStore(
     config: Partial<EmailConfig>,
@@ -322,7 +415,8 @@ export class EmailEngine {
             break;
           case "weekStartDay": {
             const n = parseInt(value, 10);
-            if (n >= 0 && n <= 6) settings.weekStartDay = n as 0|1|2|3|4|5|6;
+            if (n >= 0 && n <= 6)
+              settings.weekStartDay = n as 0 | 1 | 2 | 3 | 4 | 5 | 6;
             break;
           }
           case "timeFormat":
@@ -333,14 +427,19 @@ export class EmailEngine {
 
       return settings;
     } catch {
-      // Tab doesn't exist or is empty — that's fine, use defaults
+      // If the tab doesn't exist or is empty, return an empty object,
+      // as defaults will be applied in `resolveLocale`.
       return {};
     }
   }
 
   /**
-   * Resolve locale config with defaults for any missing fields.
-   * Priority: programmatic config.locale > Settings tab > defaults
+   * Resolves the final locale configuration by combining programmatic settings,
+   * spreadsheet settings, and sensible defaults.
+   * Priority: programmatic config.locale > Settings tab > internal defaults.
+   * @param config The email configuration.
+   * @param tabSettings Locale settings loaded from the configuration tab.
+   * @returns A complete `Required<LocaleConfig>` object with all fields defined.
    */
   private resolveLocale(
     config: Partial<EmailConfig>,
@@ -348,7 +447,10 @@ export class EmailEngine {
   ): Required<LocaleConfig> {
     const l = config.locale ?? {};
     return {
-      timezone: l.timezone ?? tabSettings.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+      timezone:
+        l.timezone ??
+        tabSettings.timezone ??
+        Intl.DateTimeFormat().resolvedOptions().timeZone,
       dateFormat: l.dateFormat ?? tabSettings.dateFormat ?? "dd-MMM-yyyy",
       locale: l.locale ?? tabSettings.locale ?? "en-GB",
       weekStartDay: l.weekStartDay ?? tabSettings.weekStartDay ?? 0,
@@ -357,7 +459,13 @@ export class EmailEngine {
   }
 
   /**
-   * Apply data to template (dictionary replacement)
+   * Applies recipient-specific data and other dynamic tokens (date, time, links, tables)
+   * to the template's subject and body.
+   * @param template The parsed template.
+   * @param recipient The current recipient for whom the email is being generated.
+   * @param config The overall email configuration.
+   * @param locale The resolved locale configuration.
+   * @returns A promise that resolves with a new `ParsedTemplate` object containing the processed subject and body.
    */
   private async applyTemplateData(
     template: ParsedTemplate,
@@ -365,31 +473,31 @@ export class EmailEngine {
     config: EmailConfig,
     locale: Required<LocaleConfig>,
   ): Promise<ParsedTemplate> {
-
-    // Heal HTML tags injected inside {{ }} tokens by rich-text editors
+    // Clean up HTML tags potentially injected by rich-text editors inside `{{ }}` tokens.
     let subject = this.healTokens(template.subject);
     let body = this.healTokens(template.body);
 
-    // Replace recipient tags
+    // Replace recipient tags (e.g., {{FirstName}}, {{LastName}})
+    // A simple regex is used here because Handlebars might conflict with custom tokens.
     for (const [key, value] of Object.entries(recipient.tags)) {
       const regex = new RegExp(`{{${key}}}`, "g");
       subject = subject.replace(regex, value);
       body = body.replace(regex, value);
     }
 
-    // Replace date tokens
+    // Apply date token replacements (e.g., {{DATE:Today}}, {{DATE:Next Monday}})
     body = this.applyDateTokens(body, locale);
     subject = this.applyDateTokens(subject, locale);
 
-    // Replace time tokens
+    // Replace time tokens (e.g., {{TIME}}, {{TIME:Asia/Kuala_Lumpur}})
     body = this.applyTimeTokens(body, locale);
     subject = this.applyTimeTokens(subject, locale);
 
-    // Replace greeting
+    // Replace greeting token (e.g., {{GREETING}}) based on time of day.
     const greeting = this.getGreeting(locale);
     body = body.replace(/{{GREETING}}/g, greeting);
 
-    // Load and inject managed links
+    // Load and inject managed links (e.g., $LINK:Key, TEXT:Label$) if `LinkRepository` is available.
     if (config.linkRepositorySheetId && this.services.links) {
       const links = await this.services.links.loadLinks(
         config.linkRepositorySheetId,
@@ -398,7 +506,7 @@ export class EmailEngine {
       body = this.injectLinks(body, links);
     }
 
-    // Render tables
+    // Render tables (e.g., [Table] Sheet: URL, range: 'Tab'!A1:D10) if `TableRenderer` is available.
     if (this.services.tables) {
       body = await this.renderTables(body);
     }
@@ -411,9 +519,15 @@ export class EmailEngine {
   }
 
   /**
-   * Apply date token replacements with robust logic
+   * Applies date token replacements (e.g., `{{DATE:Today}}`, `{{MONTHNAME}}`) with locale-aware formatting.
+   * @param text The input string (subject or body) to process.
+   * @param locale The resolved locale configuration.
+   * @returns The string with date tokens replaced.
    */
-  private applyDateTokens(text: string, locale: Required<LocaleConfig>): string {
+  private applyDateTokens(
+    text: string,
+    locale: Required<LocaleConfig>,
+  ): string {
     const DATE_REGEX = /{{DATE:([^}]+)}}/g;
     const MONTH_REGEX = /{{MONTHNAME(?::([^}]+))?}}/g;
 
@@ -422,6 +536,7 @@ export class EmailEngine {
         const date = this.parseDateToken(token, locale);
         return this.formatDate(date, locale);
       } catch (e) {
+        // If parsing or formatting fails, return the original match to avoid breaking the template.
         return match;
       }
     });
@@ -429,15 +544,18 @@ export class EmailEngine {
     result = result.replace(MONTH_REGEX, (match, offset) => {
       try {
         const date = new Date();
+        // Adjust month if an offset is provided (e.g., {{MONTHNAME:+1}})
         if (offset) {
           date.setMonth(date.getMonth() + parseInt(offset, 10));
         }
+        // Format month name and year according to locale
         return date.toLocaleString(locale.locale, {
           month: "long",
           year: "numeric",
           timeZone: locale.timezone,
         });
       } catch (e) {
+        // If formatting fails, return the original match.
         return match;
       }
     });
@@ -446,13 +564,20 @@ export class EmailEngine {
   }
 
   /**
-   * Apply time token replacements: {{TIME}} or {{TIME:timezone_label}}
+   * Applies time token replacements (e.g., `{{TIME}}` or `{{TIME:timezone_label}}`).
+   * @param text The input string (subject or body) to process.
+   * @param locale The resolved locale configuration.
+   * @returns The string with time tokens replaced.
    */
-  private applyTimeTokens(text: string, locale: Required<LocaleConfig>): string {
+  private applyTimeTokens(
+    text: string,
+    locale: Required<LocaleConfig>,
+  ): string {
     const TIME_REGEX = /{{TIME(?::([^}]+))?}}/g;
 
     return text.replace(TIME_REGEX, (match, param) => {
       try {
+        // Use provided timezone parameter or fallback to configured locale timezone.
         const tz = param?.trim() || locale.timezone;
         const opts: Intl.DateTimeFormatOptions = {
           hour: "2-digit",
@@ -462,11 +587,19 @@ export class EmailEngine {
         };
         return new Date().toLocaleTimeString(locale.locale, opts);
       } catch (e) {
+        // If formatting fails, return the original match.
         return match;
       }
     });
   }
 
+  /**
+   * Parses a date token (e.g., "Today", "Next Monday", "Today+7") into a `Date` object.
+   * Handles relative dates, day arithmetic, and specific weekdays, respecting `weekStartDay` locale setting.
+   * @param token The date token string to parse.
+   * @param locale The resolved locale configuration for `weekStartDay`.
+   * @returns A `Date` object representing the parsed date.
+   */
   private parseDateToken(token: string, locale: Required<LocaleConfig>): Date {
     const now = new Date();
     const t = token.toLowerCase().trim();
@@ -485,6 +618,7 @@ export class EmailEngine {
       return now;
     }
     if (t === "weekstart") {
+      // Adjust date to the start of the week based on locale's `weekStartDay`.
       const currentDay = now.getDay();
       const diff = (currentDay - locale.weekStartDay + 7) % 7;
       now.setDate(now.getDate() - diff);
@@ -494,7 +628,7 @@ export class EmailEngine {
     // Day Arithmetic: Today+7, Today-1
     const mathMatch = t.match(/today([+-])(\d+)/);
     if (mathMatch) {
-      const op = mathMatch[1] === "+" ? 1 : -1;
+      const op = mathMatch[1] === "+" ? 1 : -1; // Determine if adding or subtracting days
       const days = parseInt(mathMatch[2], 10);
       now.setDate(now.getDate() + op * days);
       return now;
@@ -514,29 +648,42 @@ export class EmailEngine {
     if (targetDay !== -1) {
       const currentDay = now.getDay();
       let diff = targetDay - currentDay;
-      if (t.includes("next")) diff += 7;
-      if (t.includes("last")) diff -= 7;
-      if (diff === 0 && !t.includes("next") && !t.includes("last")) diff = 0;
-      else if (diff <= 0 && !t.includes("last")) diff += 7;
+      if (t.includes("next")) diff += 7; // For "next <weekday>"
+      if (t.includes("last")) diff -= 7; // For "last <weekday>"
+      // Adjust diff to ensure it targets the correct future or past weekday if not "next" or "last" explicitly
+      else if (diff <= 0) diff += 7; // Default to next occurrence if in the past or today, unless "last" was specified.
 
       now.setDate(now.getDate() + diff);
       return now;
     }
 
-    return now;
+    return now; // Fallback to current date if no specific token matched.
   }
 
+  /**
+   * Formats a given `Date` object into a string according to the specified `dateFormat` and `locale`.
+   * @param d The `Date` object to format.
+   * @param locale The resolved locale configuration containing `dateFormat` and `locale`.
+   * @returns The formatted date string.
+   */
   private formatDate(d: Date, locale: Required<LocaleConfig>): string {
     const fmt = locale.dateFormat;
 
-    // Use Intl for locale-aware month names
+    // Use Intl for locale-aware month names to ensure correct language and capitalization.
     const dayNum = d.getDate().toString().padStart(2, "0");
-    const monthShort = d.toLocaleString(locale.locale, { month: "short", timeZone: locale.timezone });
-    const monthLong = d.toLocaleString(locale.locale, { month: "long", timeZone: locale.timezone });
+    const monthShort = d.toLocaleString(locale.locale, {
+      month: "short",
+      timeZone: locale.timezone,
+    });
+    const monthLong = d.toLocaleString(locale.locale, {
+      month: "long",
+      timeZone: locale.timezone,
+    });
     const monthNumeric = (d.getMonth() + 1).toString().padStart(2, "0");
     const year = d.getFullYear().toString();
     const yearShort = year.slice(-2);
 
+    // Replace format tokens with corresponding date parts.
     return fmt
       .replace("dd", dayNum)
       .replace("MMMM", monthLong)
@@ -547,9 +694,13 @@ export class EmailEngine {
   }
 
   /**
-   * Get greeting based on time of day in the configured timezone
+   * Generates a greeting ("Good Morning", "Good Afternoon", "Good Evening") based on the current
+   * time in the configured timezone.
+   * @param locale The resolved locale configuration for timezone.
+   * @returns A greeting string.
    */
   private getGreeting(locale: Required<LocaleConfig>): string {
+    // Get the current hour in the specified timezone using locale-aware formatting.
     const hour = parseInt(
       new Date().toLocaleString(locale.locale, {
         hour: "2-digit",
@@ -564,29 +715,42 @@ export class EmailEngine {
   }
 
   /**
-   * Inject managed links into template
+   * Injects managed links into the email body by replacing `$LINK:Key, TEXT:Label$` patterns
+   * with actual HTML `<a>` tags, ensuring URLs are sanitized.
+   * @param body The email body content.
+   * @param links An array of `ManagedLink` objects.
+   * @returns The email body with links injected.
    */
   private injectLinks(body: string, links: any[]): string {
     let result = body;
-
     for (const link of links) {
+      const safeKey = this.escapeRegex(link.key);
+      const safeUrl = this.sanitizeUrl(link.url);
+      // Regex to find link patterns like $LINK:Key, TEXT:Label$
       const pattern = new RegExp(
-        `\\$LINK:${link.key},\\s*TEXT:([^$]+)\\$`,
-        "g",
+        `\\$LINK:${safeKey},\\s*TEXT:([^\$]+)\\$`,
+        'g',
       );
-      result = result.replace(pattern, `<a href="${link.url}">$1</a>`);
+      result = result.replace(pattern, (_match, text) => {
+        const safeText = this.htmlEscape(text.trim());
+        return `<a href="${safeUrl}">${safeText}</a>`;
+      });
     }
-
     return result;
   }
 
-    /**
-     * Render tables in the body
-     */
-    private async renderTables(body: string): Promise<string> {
-      const regex = createTableTagRegex();
-      
-      return this.replaceAsync(body, regex, async (match, sheetId, rangeRaw) => {      try {
+  /**
+   * Renders `[Table]` tags in the email body by asynchronously calling the `TableRenderer` service
+   * to convert data ranges into HTML tables.
+   * @param body The email body content potentially containing `[Table]` tags.
+   * @returns A promise that resolves with the email body with tables rendered.
+   */
+  private async renderTables(body: string): Promise<string> {
+    const regex = createTableTagRegex();
+
+    // Use a custom async replace function to handle promises within the replacement callback.
+    return this.replaceAsync(body, regex, async (match, sheetId, rangeRaw) => {
+      try {
         // Clean range string (remove quotes if any)
         const range = rangeRaw.replace(/['"]/g, "").trim();
         const cleanSheetId = sheetId.trim();
@@ -594,19 +758,26 @@ export class EmailEngine {
         if (this.services.tables) {
           return await this.services.tables.renderTable(cleanSheetId, range);
         }
-        return match;
+        return match; // Return original match if table service is not available.
       } catch (error: any) {
         this.services.logger.error(
           "EmailEngine",
           `Failed to render table: ${error.message}`,
         );
+        // Provide an error message directly in the email body if table rendering fails.
         return `<p style="color:red">[Table Error: ${error.message}]</p>`;
       }
     });
   }
 
   /**
-   * Helper to replace string with async callback
+   * Helper function to perform string replacement with an asynchronous callback.
+   * This is necessary because `String.prototype.replace()` does not natively support async functions
+   * in its replacer argument.
+   * @param str The input string.
+   * @param regex The regular expression to match.
+   * @param asyncFn An asynchronous function to be called for each match, returning a promise of the replacement string.
+   * @returns A promise that resolves with the string after all asynchronous replacements have been made.
    */
   private async replaceAsync(
     str: string,
@@ -615,10 +786,10 @@ export class EmailEngine {
   ): Promise<string> {
     const promises: Promise<string>[] = [];
 
-    // First pass: collect all promises
+    // First pass: collect all promises generated by asyncFn for each match.
     str.replace(regex, (match, ...args) => {
       promises.push(asyncFn(match, ...args));
-      return match;
+      return match; // Return original match for now, actual replacement happens after all promises resolve.
     });
 
     const replacements = await Promise.all(promises);
@@ -626,12 +797,15 @@ export class EmailEngine {
     // Reset regex index if global flag is set (crucial for second pass!)
     if (regex.global) regex.lastIndex = 0;
 
-    // Second pass: replace with resolved values
+    // Second pass: replace with resolved values from the `replacements` array.
     return str.replace(regex, () => replacements.shift() || "");
   }
 
   /**
-   * Validate a template before execution
+   * Validates a template before execution using the `TemplateValidator` service.
+   * @param templateName The name of the template to validate.
+   * @param sourceId The ID of the source document where the template is located.
+   * @returns A promise that resolves with a `ValidationResult` object.
    */
   async validateTemplate(
     templateName: string,
@@ -645,11 +819,15 @@ export class EmailEngine {
   }
 
   /**
-   * Strip HTML tags that rich-text editors inject inside {{ }} tokens.
-   * e.g. {{ <b>DATE</b>:Today }} → {{DATE:Today}}
+   * Strips HTML tags that rich-text editors often inject inside `{{ }}` tokens,
+   * which can interfere with token parsing.
+   * E.g., `{{ <b>DATE</b>:Today }}` becomes `{{DATE:Today}}`.
+   * @param text The input string (e.g., template subject or body).
+   * @returns The string with HTML tags removed from within `{{ }}` tokens.
    */
   private healTokens(text: string): string {
     return text.replace(/\{\{(.*?)\}\}/g, (_match, inner: string) => {
+      // Remove HTML tags, replace non-breaking spaces, collapse multiple spaces, and trim.
       const clean = inner
         .replace(/<[^>]+>/g, "")
         .replace(/&nbsp;/g, " ")
@@ -660,34 +838,38 @@ export class EmailEngine {
   }
 
   /**
-   * Convert HTML to plain text for accessibility and snippets
+   * Converts an HTML string to plain text, aiming for readability.
+   * Replaces common HTML tags like `<br>`, `<p>`, `<li>`, `<tr>`, `<td>` with appropriate
+   * plain text equivalents (newlines, bullet points, tabs).
+   * @param html The HTML string to convert.
+   * @returns The plain text representation of the HTML.
    */
   private htmlToPlainText(html: string): string {
     if (!html) return "";
 
     return (
       html
-        // Replace <br>, <p> with newlines
+        // Replace <br>, <p> with newlines for paragraph breaks.
         .replace(/<br\s*\/?>/gi, "\n")
         .replace(/<p[^>]*>/gi, "\n")
         .replace(/<\/p>/gi, "\n")
-        // Replace <li> with bullet points
+        // Replace <li> with bullet points for list items.
         .replace(/<li>/gi, "• ")
         .replace(/<\/li>/gi, "\n")
-        // Replace <tr> with newlines for tables
+        // Replace <tr> with newlines for table rows.
         .replace(/<\/tr>/gi, "\n")
-        // Replace <td>, <th> with tabs
+        // Replace <td>, <th> with tabs for column separation in tables.
         .replace(/<td[^>]*>/gi, "\t")
         .replace(/<th[^>]*>/gi, "\t")
-        // Remove all remaining HTML tags
+        // Remove all remaining HTML tags.
         .replace(/<[^>]+>/g, "")
-        // Decode common HTML entities
+        // Decode common HTML entities to their character equivalents.
         .replace(/&nbsp;/g, " ")
         .replace(/&amp;/g, "&")
         .replace(/&lt;/g, "<")
         .replace(/&gt;/g, ">")
         .replace(/&quot;/g, '"')
-        // Collapse multiple newlines
+        // Collapse multiple consecutive newlines into at most two for better readability.
         .replace(/\n{3,}/g, "\n\n")
         .trim()
     );

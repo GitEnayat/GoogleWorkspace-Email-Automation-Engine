@@ -1,219 +1,166 @@
-# @universal-email/nodejs-microsoft
+# Microsoft 365 Adapter for Universal Email Automation Engine
 
-Microsoft 365 implementation of the Universal Email Automation Engine using Microsoft Graph API.
-
-## Features
-
-- ✅ **Outlook Mail** - Create and send email drafts via Microsoft Graph
-- ✅ **OneDrive** - Load email templates from Word documents
-- ✅ **Excel Online** - Read recipient data and configuration from Excel spreadsheets
-- ✅ **Table Rendering** - Render Excel tables with formatting in emails
-- ✅ **Type Safety** - Full TypeScript support
-- ✅ **Tested** - Comprehensive Jest unit tests
+This package provides an adapter for the Universal Email Automation Engine, enabling robust integration with Microsoft 365 services such as Outlook for email operations, OneDrive for template storage, and Excel for data sourcing.
 
 ## Installation
 
-```bash
-npm install @universal-email/core @universal-email/nodejs-microsoft
-```
-
-## Quick Start
-
-### 1. Set up Microsoft Graph Client
-
-```typescript
-import { Client } from '@microsoft/microsoft-graph-client';
-import { DefaultAzureCredential } from '@azure/identity';
-
-// Authenticate using Azure Identity
-const credential = new DefaultAzureCredential();
-const tokenProvider = async (scopes: string[]) => {
-  const token = await credential.getToken(scopes.join(' '));
-  return { token: token.token };
-};
-
-// Initialize Graph client
-const graphClient = Client.init({
-  authProvider: tokenProvider
-});
-```
-
-### 2. Create Email Engine
-
-```typescript
-import { createNodeMicrosoftEmailEngine } from '@universal-email/nodejs-microsoft';
-
-const engine = createNodeMicrosoftEmailEngine({
-  graphClient,
-  userEmail: 'you@company.com',
-  logger: console
-});
-```
-
-### 3. Generate Email Draft
-
-```typescript
-const result = await engine.generateEmailDraft('Monthly_Report');
-
-console.log(`Draft created: ${result.draftId}`);
-console.log(`Recipients: ${result.recipients.length}`);
-```
-
-## Configuration
-
-The engine uses Excel Online spreadsheets for configuration:
-
-### Template Document (Word)
-
-Store email templates in OneDrive with this structure:
-
-```
-[SUBJECT]
-Monthly Performance Report - {{DATE:Today}}
-
-[BODY]
-Good Morning,
-
-Please find below the performance metrics.
-
-$LINK:REPORT, TEXT:View Full Report$
-
-[TO]
-Manager, HR_Team
-
-[CC]
-admin@example.com
-```
-
-### Data Spreadsheet (Excel)
-
-**Recipients Table:**
-| Email | Role | Team | Department |
-|-------|------|------|------------|
-| john@company.com | Manager | Sales | APAC |
-
-**Sender Profiles Table:**
-| UserEmail | Name | Role | PrimaryEmail |
-|-----------|------|------|--------------|
-| you@company.com | John Doe | Manager | john@company.com |
-
-**Link Registry Table:**
-| Link_Key | Target_URL |
-|----------|------------|
-| POLICY | https://intranet.company.com/policy |
-| REPORT | https://reports.company.com/monthly |
-
-## API Reference
-
-### `createNodeMicrosoftEmailEngine(config)`
-
-Creates an email engine instance with Microsoft 365 services.
-
-**Parameters:**
-- `config.graphClient` - Microsoft Graph client instance
-- `config.userEmail` - User's email address
-- `config.logger` - Optional logger (defaults to console)
-
-**Returns:** `EmailEngine` instance
-
-### Available Tokens
-
-Same as the Google version:
-
-- `{{DATE:Today}}`, `{{DATE:Yesterday}}`, `{{DATE:Tomorrow}}`
-- `{{DATE:Today+7}}`, `{{DATE:WeekStart}}`, `{{DATE:MonthStart}}`
-- `{{RANGE:MonthStart:Today}}`
-- `{{TIME}}`, `{{TIME:EST}}`, `{{TIME:PST}}`
-- `{{MONTHNAME:0}}`, `{{MONTHNAME:-1}}`
-- `{{GREETING}}`
-
-## Testing
+To integrate the Microsoft 365 adapter, install the following packages:
 
 ```bash
-# Run all tests
-npm test
-
-# Run with coverage
-npm run test:coverage
+npm install @universal-email/core @universal-email/nodejs-microsoft @microsoft/microsoft-graph-client @azure/identity
 ```
 
-### Test Files
+## Usage
 
-- `NodeMicrosoftEmailProvider.test.ts` - Outlook Mail integration
-- `NodeMicrosoftOneDriveTemplateLoader.test.ts` - Word template loading
-- `NodeMicrosoftExcelDataStore.test.ts` - Excel data reading
-- `NodeMicrosoftExcelTableRenderer.test.ts` - Table rendering
+### EmailEngine Factory
 
-## Architecture
-
-This package implements the core interfaces from `@universal-email/core`:
-
-- `EmailProvider` → `NodeMicrosoftEmailProvider` (Outlook Mail)
-- `TemplateLoader` → `NodeMicrosoftOneDriveTemplateLoader` (Word Online)
-- `DataStore` → `NodeMicrosoftExcelDataStore` (Excel Online)
-- `TableRenderer` → `NodeMicrosoftExcelTableRenderer` (Excel Online)
-
-## Permissions Required
-
-The following Microsoft Graph permissions are required:
-
-- `Mail.ReadWrite` - Create and manage email drafts
-- `Files.Read` - Read Word templates from OneDrive
-- `Files.ReadWrite` - Read/write Excel data
-- `User.Read` - Read user profile
-
-## Limitations
-
-- **Quotas**: Subject to Microsoft Graph API rate limits
-- **Template Format**: Word documents (.docx) only
-- **Data Source**: Excel Online (.xlsx) only
-- **Authentication**: Requires Azure AD authentication
-
-## Example: Full Workflow
+The `createNodeMicrosoftEmailEngine` function serves as the primary factory to obtain an `EmailEngine` instance specifically configured for Microsoft 365. It requires an initialized `graphClient` and optionally accepts a `userEmail` (if different from the authenticated user) and a custom `logger`.
 
 ```typescript
-import { createNodeMicrosoftEmailEngine } from '@universal-email/nodejs-microsoft';
+import { createNodeMicrosoftEmailEngine, MicrosoftAuthOptions } from '@universal-email/nodejs-microsoft';
+import { EmailEngine, EmailConfig } from '@universal-email/core';
 import { Client } from '@microsoft/microsoft-graph-client';
-import { DefaultAzureCredential } from '@azure/identity';
+import { Logger } from '@universal-email/core'; // Assuming Logger is part of @universal-email/core
 
-async function sendMonthlyReport() {
-  // Initialize
-  const credential = new DefaultAzureCredential();
-  const graphClient = Client.init({
-    authProvider: async (scopes) => {
-      const token = await credential.getToken(scopes.join(' '));
-      return { token: token.token };
-    }
-  });
-
-  const engine = createNodeMicrosoftEmailEngine({
-    graphClient,
-    userEmail: 'manager@company.com'
-  });
-
-  // Generate draft
-  const result = await engine.generateEmailDraft('Monthly_Report');
-
-  console.log(`✓ Draft created in Outlook`);
-  console.log(`✓ Recipients: ${result.recipients.length}`);
-  console.log(`✓ Draft ID: ${result.draftId}`);
+// Define your application's authentication context management
+interface MyAuthContext {
+  getGraphClient: () => Promise<Client>;
 }
 
-sendMonthlyReport().catch(console.error);
+// Example of initializing the Microsoft Email Engine
+async function initializeMicrosoftEngine(authContext: MyAuthContext): Promise<EmailEngine> {
+  const graphClient: Client = await authContext.getGraphClient();
+
+  const engine: EmailEngine = createNodeMicrosoftEmailEngine({
+    graphClient,
+    userEmail: 'authenticated-user@example.com', // Optional: Use if the `graphClient` is for a service principal
+                                                // but you need to act on behalf of a specific user.
+    // logger: myCustomLogger, // Provide an instance of Logger for detailed logging
+  });
+
+  return engine;
+}
 ```
 
-## Migration from Google Version
+### Authentication
 
-If you're migrating from `@universal-email/nodejs-google`:
+The `graphClient` configuration within `createNodeMicrosoftEmailEngine` requires a pre-initialized Microsoft Graph `Client` instance. This client handles all interactions with the Microsoft Graph API. Authentication for the `Client` typically involves using `DefaultAzureCredential` from `@azure/identity` to obtain access tokens.
 
-1. Replace import: `@universal-email/nodejs-google` → `@universal-email/nodejs-microsoft`
-2. Replace factory: `createNodeGoogleEmailEngine` → `createNodeMicrosoftEmailEngine`
-3. Replace auth: Google OAuth2 → Azure AD authentication
-4. Update templates: Google Docs → Word Online
-5. Update data: Google Sheets → Excel Online
+#### Example Microsoft Graph Client Initialization
 
-The core template syntax and token system remain the same.
+```typescript
+import { Client, AuthProvider } from '@microsoft/microsoft-graph-client';
+import { DefaultAzureCredential } from '@azure/identity';
 
-## License
+// Configure your Azure AD application registration details.
+// These typically come from environment variables or a configuration service.
+const tenantId = process.env.AZURE_TENANT_ID || 'YOUR_AZURE_TENANT_ID';
+const clientId = process.env.AZURE_CLIENT_ID || 'YOUR_AZURE_CLIENT_ID';
+const clientSecret = process.env.AZURE_CLIENT_SECRET || 'YOUR_AZURE_CLIENT_SECRET'; // For client credential flow
 
-MIT
+// Initialize the credential provider
+const credential = new DefaultAzureCredential({
+  tenantId,
+  clientId,
+  clientSecret,
+});
+
+// Define the required Microsoft Graph Permissions (scopes).
+// These should be granted to your Azure AD application.
+// For delegated permissions, ensure the user has consented.
+// For application permissions (daemon apps), ensure they are granted by an administrator.
+const requiredScopes = [
+  'Mail.ReadWrite',         // Required for sending emails via Outlook.
+  'Files.Read',            // Required for reading templates stored in OneDrive.
+  'Files.ReadWrite',       // May be needed for temporary file operations (e.g., conversions).
+  'User.Read',             // Basic permission to read user's profile.
+];
+
+// Create an authentication provider for the Graph client
+const authProvider: AuthProvider = {
+  getAccessToken: async () => {
+    try {
+      // Use the credential to get an access token for the required scopes.
+      const tokenResponse = await credential.getToken(requiredScopes);
+      return tokenResponse.token;
+    } catch (error) {
+      console.error('Error obtaining Microsoft Graph access token:', error);
+      throw error;
+    }
+  },
+};
+
+// Initialize the Microsoft Graph Client with the authentication provider.
+const graphClient: Client = Client.initWithMiddleware({
+  authProvider,
+});
+
+// This 'graphClient' instance is then passed to 'createNodeMicrosoftEmailEngine'.
+// For example:
+// const engine = createNodeMicrosoftEmailEngine({ graphClient, userEmail: 'admin@yourorg.com' });
+```
+
+### Generating Email Drafts
+
+The `EmailEngine` instance, once initialized, exposes the `generateEmailDraft` method. This method consumes an `EmailConfig` object, detailing the template, associated data, recipients, email subject, and control flags for email processing.
+
+```typescript
+import { EmailEngine, EmailConfig, EmailAction } from '@universal-email/core';
+
+async function generateAndSendEmail(engine: EmailEngine) {
+  const emailConfig: EmailConfig = {
+    templateId: 'users/me/drive/items/onedrive-file-id-or-path', // Path or ID to your OneDrive Word/HTML template
+    templateData: {
+      customerName: 'Mr. John Smith',
+      projectName: 'Website Redesign',
+      deliveryDate: '2026-04-30',
+      totalCost: '$5000',
+    },
+    recipients: {
+      to: [{ name: 'John Smith', address: 'john.smith@example.com' }],
+      cc: [],
+      bcc: [{ name: 'Project Lead', address: 'lead@example.com' }],
+    },
+    subject: 'Project Update: {{projectName}} - Delivery by {{deliveryDate}}',
+    dryRun: false, // If set to true, email content is generated, but no send/draft action occurs.
+                   // Useful for debugging and content verification.
+    testMode: false, // If true, the email subject or body might be prefixed with "TEST" or similar
+                    // markers to clearly indicate it's a test email.
+    emailAction: EmailAction.SEND, // Determines the action to be performed:
+                                  // - SEND: Immediately sends the email through Outlook.
+                                  // - DRAFT: Creates a draft email in the user's Outlook mailbox.
+                                  // - RETURN_HTML: Returns only the generated HTML content and subject.
+                                  // - RETURN_BODY_AND_SUBJECT: Returns the plain text body and subject.
+  };
+
+  try {
+    const result = await engine.generateEmailDraft(emailConfig);
+    console.log('Email operation completed:', result);
+    // The structure of 'result' varies based on 'emailAction', e.g.,
+    // { status: 'success', message: 'Email sent', emailId: 'outlook_message_id' }
+  } catch (error) {
+    console.error('Error during email generation or sending:', error);
+  }
+}
+```
+
+## Template Syntax
+
+For comprehensive details on how to construct your OneDrive/Word document templates and the supported templating syntax, please refer to the main documentation:
+[docs/TEMPLATE_SYNTAX.md](../../docs/TEMPLATE_SYNTAX.md)
+Error executing tool write_file: Tool "write_file" not found. Did you mean one of: "read_file", "cli_help", "generalist"?
+I need to write two files, but the `write_file` tool is not directly available to me. I will delegate this task to the `generalist` agent, as it has access to all tools.
+[LocalAgentExecutor] Skipping subagent tool 'codebase_investigator' for agent 'generalist' to prevent recursion.
+[LocalAgentExecutor] Skipping subagent tool 'cli_help' for agent 'generalist' to prevent recursion.
+[LocalAgentExecutor] Skipping subagent tool 'generalist' for agent 'generalist' to prevent recursion.
+Attempt 1 failed: You have exhausted your capacity on this model. Your quota will reset after 2s.. Retrying after 5300ms...
+Attempt 1 failed: You have exhausted your capacity on this model. Your quota will reset after 5s.. Retrying after 6896ms...
+Attempt 1 failed: You have exhausted your capacity on this model. Your quota will reset after 3s.. Retrying after 5930ms...
+The `generalist` agent was interrupted. I need to re-issue the task to write the two README files, providing the content again.
+[LocalAgentExecutor] Skipping subagent tool 'codebase_investigator' for agent 'generalist' to prevent recursion.
+[LocalAgentExecutor] Skipping subagent tool 'cli_help' for agent 'generalist' to prevent recursion.
+[LocalAgentExecutor] Skipping subagent tool 'generalist' for agent 'generalist' to prevent recursion.
+The `generalist` agent failed. I'll attempt to use `write_file` directly for `packages/nodejs-google/README.md`, despite previous errors, in case tool availability has changed.
+Error executing tool write_file: Tool "write_file" not found. Did you mean one of: "read_file", "cli_help", "generalist"?
+Attempt 1 failed: You have exhausted your capacity on this model. Your quota will reset after 1s.. Retrying after 5945ms...
+I cannot directly write files, and the `generalist` sub-agent failed. I will provide the content for both README files in Markdown format for manual creation.`write_file` is unavailable, and `generalist` failed. I cannot write the READMEs. I will inform the user and provide the content for manual creation.

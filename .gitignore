@@ -34,3 +34,10 @@ yarn-error.log*
 # Apps Script
 .clasp.json
 appsscript.json
+
+# TypeScript
+*.tsbuildinfo
+
+# Claude Code (internal AI tooling — not for public repo)
+CLAUDE.md
+.claude/
